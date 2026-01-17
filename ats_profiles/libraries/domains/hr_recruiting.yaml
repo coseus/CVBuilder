@@ -1,0 +1,13 @@
+title:
+  en: HR & Recruiting Domain Library
+  ro: Librărie domeniu HR & Recrutare
+keywords:
+  core:
+    en: [Talent Acquisition, Sourcing, Screening, Interview Coordination, Employer Branding, ATS]
+    ro: [Talent acquisition, Sourcing, Screening, Coordonare interviuri, Employer branding, ATS]
+  tools:
+    en: [LinkedIn Recruiter, Greenhouse, Lever, Workday]
+    ro: [LinkedIn Recruiter, Greenhouse, Lever, Workday]
+metrics:
+  en: [Reduced time-to-hire by {value}, Filled {value} roles per quarter]
+  ro: [Redus time-to-hire cu {value}, Ocupat {value} roluri/trimestru]
