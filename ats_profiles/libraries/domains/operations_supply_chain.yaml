@@ -1,0 +1,13 @@
+title:
+  en: Operations & Supply Chain Domain Library
+  ro: Librărie domeniu Operațiuni & Supply Chain
+keywords:
+  core:
+    en: [Process Optimization, Inventory Management, Procurement, Logistics, Vendor Management, KPI Tracking]
+    ro: [Optimizare procese, Management inventar, Achiziții, Logistică, Management furnizori, KPI]
+  tools:
+    en: [Excel, ERP, SAP]
+    ro: [Excel, ERP, SAP]
+metrics:
+  en: [Reduced lead time by {value}, Improved on-time delivery to {value}]
+  ro: [Redus lead time cu {value}, Crescut livrarea la timp la {value}]
