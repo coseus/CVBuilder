@@ -265,7 +265,7 @@ with tab_modern:
             profile = render_profile_manager(cv) or profile
 
         st.markdown("---")
-        render_ats_optimizer(cv)
+        render_ats_optimizer(cv, profile=profile)
         st.markdown("---")
         render_jd_ml_offline_panel(cv)
         st.markdown("---")
