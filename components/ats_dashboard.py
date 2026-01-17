@@ -34,11 +34,18 @@ def extract_jd_keywords(text: str, top_n: int = 35) -> List[str]:
     return [w for w, _ in Counter(cleaned).most_common(top_n)]
 
 
+from utils import jd_optimizer
+...
 def render_ats_score_dashboard(cv: Dict[str, Any], profile: Dict[str, Any]):
     st.subheader("ATS Score Dashboard")
     st.caption("Pragmatic scoring to help you improve readability for recruiters and match for ATS.")
 
+    jd_optimizer.ensure_jd_state(cv)
+    jd_optimizer.auto_update_on_change(cv, profile=profile)
+
     jd = (cv.get('job_description') or '').strip()
+    ...
+
     jd_keywords = extract_jd_keywords(jd, top_n=35) if jd else []
 
     score = compute_score(cv, profile, jd_keywords)
