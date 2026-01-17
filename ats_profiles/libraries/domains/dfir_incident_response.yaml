@@ -1,0 +1,13 @@
+title:
+  en: DFIR & Incident Response Domain Library
+  ro: Librărie domeniu DFIR & Incident Response
+keywords:
+  core:
+    en: [Incident Response, Forensics, Triage, Containment, Eradication, Recovery, Post-Incident Review]
+    ro: [Răspuns la incidente, Forensic, Triaj, Contenție, Eradicare, Recuperare, Post-incident review]
+  tools:
+    en: [Velociraptor, KAPE, Sysmon, Volatility, EDR, SIEM]
+    ro: [Velociraptor, KAPE, Sysmon, Volatility, EDR, SIEM]
+metrics:
+  en: [Reduced MTTR by {value}, Improved incident closure rate by {value}]
+  ro: [Redus MTTR cu {value}, Îmbunătățit rata de închidere incidente cu {value}]
