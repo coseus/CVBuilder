@@ -3,9 +3,6 @@ from __future__ import annotations
 import os
 import re
 import sys
-import shutil
-from dataclasses import dataclass
-from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 import yaml
@@ -15,83 +12,73 @@ class ProfileError(Exception):
     pass
 
 
-# ---------------------------
-# Cross-platform user data root
-# ---------------------------
-def _user_data_root() -> Path:
+# -----------------------------
+# Robust base dir (Streamlit Cloud + local + PyInstaller)
+# -----------------------------
+def _app_base_dir() -> str:
     """
-    Stable per-user data folder (works for Streamlit Cloud too, but Cloud is ephemeral).
-    Windows: %APPDATA%/CVBuilderATS
-    macOS: ~/Library/Application Support/CVBuilderATS
-    Linux: $XDG_DATA_HOME/CVBuilderATS or ~/.local/share/CVBuilderATS
+    Determine where to resolve project-relative paths from.
+
+    - PyInstaller: sys._MEIPASS points to unpacked temp folder.
+    - Normal: resolve repo root relative to this file (utils/profiles.py -> ..).
     """
-    if os.name == "nt":
-        base = os.environ.get("APPDATA") or str(Path.home() / "AppData" / "Roaming")
-        return Path(base) / "CVBuilderATS"
+    meipass = getattr(sys, "_MEIPASS", None)
+    if meipass:
+        return os.path.abspath(meipass)
 
-    if sys.platform == "darwin":
-        return Path.home() / "Library" / "Application Support" / "CVBuilderATS"
-
-    xdg = os.environ.get("XDG_DATA_HOME")
-    if xdg:
-        return Path(xdg) / "CVBuilderATS"
-    return Path.home() / ".local" / "share" / "CVBuilderATS"
+    here = os.path.dirname(os.path.abspath(__file__))
+    return os.path.abspath(os.path.join(here, ".."))  # repo root
 
 
-# Where user-editable profiles live (persist between updates)
-ATS_ROOT_DIR = _user_data_root() / "ats_profiles"
-USER_PROFILES_DIR = ATS_ROOT_DIR / "profiles"          # optional
-USER_LIBRARIES_DIR = ATS_ROOT_DIR / "libraries"
-USER_DOMAIN_LIB_DIR = USER_LIBRARIES_DIR / "domains"
+_BASE_DIR = _app_base_dir()
 
-# Bundled profiles (inside repo / PyInstaller)
-# We keep compatibility with your existing layout:
-# - repo: ats_profiles/*.yaml (root)
-# - optional: ats_profiles/profiles/*.yaml
-# - optional: ats_profiles/libraries/...
-REPO_ATS_ROOT = Path("ats_profiles")
-REPO_PROFILES_DIR = REPO_ATS_ROOT / "profiles"
-REPO_LIBRARIES_DIR = REPO_ATS_ROOT / "libraries"
-REPO_DOMAIN_LIB_DIR = REPO_LIBRARIES_DIR / "domains"
+# Support both layouts:
+#   ats_profiles/*.yaml
+#   ats_profiles/profiles/*.yaml
+ATS_PROFILES_DIR = os.path.join(_BASE_DIR, "ats_profiles")
+ATS_PROFILES_PROFILES_DIR = os.path.join(ATS_PROFILES_DIR, "profiles")
 
 
-# ---------------------------
-# Helpers
-# ---------------------------
-def _ensure_dirs() -> None:
-    USER_PROFILES_DIR.mkdir(parents=True, exist_ok=True)
-    USER_DOMAIN_LIB_DIR.mkdir(parents=True, exist_ok=True)
+def _ensure_dir() -> None:
+    os.makedirs(ATS_PROFILES_DIR, exist_ok=True)
 
 
-def _is_frozen() -> bool:
-    return bool(getattr(sys, "frozen", False)) and hasattr(sys, "_MEIPASS")
+def _profiles_root_dir() -> str:
+    # If ats_profiles/profiles exists, use it; else fallback to ats_profiles
+    if os.path.isdir(ATS_PROFILES_PROFILES_DIR):
+        return ATS_PROFILES_PROFILES_DIR
+    return ATS_PROFILES_DIR
 
 
-def _bundle_root() -> Optional[Path]:
+def profile_path(profile_id: str) -> str:
     """
-    If running from PyInstaller, resources are under sys._MEIPASS.
-    We try to locate bundled ats_profiles folder there.
+    Returns absolute path to profile yaml.
+    Accepts both "cyber_security" and "cyber_security.yaml"
     """
-    if not _is_frozen():
-        return None
-    base = Path(getattr(sys, "_MEIPASS"))  # type: ignore
-    cand = base / "ats_profiles"
-    return cand if cand.exists() else None
+    _ensure_dir()
+    pid = (profile_id or "").strip()
+    if not pid:
+        raise ProfileError("Empty profile id")
+    if not pid.endswith(".yaml"):
+        pid += ".yaml"
+    return os.path.join(_profiles_root_dir(), pid)
 
 
-def _read_text(path: Path) -> str:
+def _read_text(path: str) -> str:
     try:
-        return path.read_text(encoding="utf-8")
+        with open(path, "r", encoding="utf-8") as f:
+            return f.read()
     except FileNotFoundError:
         raise ProfileError(f"Profile not found: {path}")
     except Exception as e:
         raise ProfileError(f"Failed to read profile: {e}")
 
 
-def _write_text(path: Path, text: str) -> None:
+def _write_text(path: str, text: str) -> None:
     try:
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(text, encoding="utf-8")
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, "w", encoding="utf-8") as f:
+            f.write(text)
     except Exception as e:
         raise ProfileError(f"Failed to write profile: {e}")
 
@@ -117,68 +104,41 @@ def _slugify(s: str) -> str:
     return s or "profile"
 
 
-def _pick_lang(val: Any, lang: str = "en") -> Any:
-    """
-    If val is dict with 'en'/'ro', pick matching language; fallback to other.
-    Otherwise return val unchanged.
-    """
-    if isinstance(val, dict):
-        if lang in val:
-            return val.get(lang)
-        # fallback order: en -> ro -> any
-        if "en" in val:
-            return val.get("en")
-        if "ro" in val:
-            return val.get("ro")
-        # any first item
-        for _, v in val.items():
-            return v
-    return val
+def _normalize_keywords(profile: Dict[str, Any]) -> Dict[str, List[str]]:
+    kw = _safe_dict(profile.get("keywords"))
+    out = {
+        "core": _safe_list(kw.get("core")),
+        "technologies": _safe_list(kw.get("technologies")),
+        "tools": _safe_list(kw.get("tools")),
+        "certifications": _safe_list(kw.get("certifications")),
+        "frameworks": _safe_list(kw.get("frameworks")),
+        "soft_skills": _safe_list(kw.get("soft_skills")),
+    }
 
+    for legacy_key in ("services", "platforms", "languages", "concepts"):
+        if legacy_key in kw and isinstance(kw.get(legacy_key), (list, str)):
+            out["technologies"].extend(_safe_list(kw.get(legacy_key)))
 
-def _dedupe_preserve(items: List[str]) -> List[str]:
-    seen = set()
-    out = []
-    for it in items:
-        s = (it or "").strip()
-        if not s:
-            continue
-        key = s.lower()
-        if key in seen:
-            continue
-        seen.add(key)
-        out.append(s)
+    for k in list(out.keys()):
+        seen = set()
+        deduped = []
+        for item in out[k]:
+            low = item.lower()
+            if low in seen:
+                continue
+            seen.add(low)
+            deduped.append(item)
+        out[k] = deduped
+
     return out
 
 
-def _merge_lists(base: List[str], extra: List[str]) -> List[str]:
-    # base first, then extra, dedupe
-    return _dedupe_preserve(list(base) + list(extra))
-
-
-def _merge_kw_bucket(base_bucket: Any, extra_bucket: Any, lang: str) -> List[str]:
-    b = _safe_list(_pick_lang(base_bucket, lang=lang))
-    e = _safe_list(_pick_lang(extra_bucket, lang=lang))
-    return _merge_lists(b, e)
-
-
-def _merge_keywords(base_kw: Dict[str, Any], extra_kw: Dict[str, Any], lang: str) -> Dict[str, List[str]]:
-    buckets = ["core", "technologies", "tools", "certifications", "frameworks", "soft_skills"]
-    out: Dict[str, List[str]] = {}
-    for k in buckets:
-        out[k] = _merge_kw_bucket(base_kw.get(k), extra_kw.get(k), lang=lang)
-    return out
-
-
-def _flatten_metrics(metrics: Any, lang: str = "en") -> List[str]:
-    metrics = _pick_lang(metrics, lang=lang)
-
+def _flatten_metrics(metrics: Any) -> List[str]:
     if metrics is None:
         return []
     if isinstance(metrics, list):
         return _safe_list(metrics)
     if isinstance(metrics, dict):
-        # legacy dict-of-lists
         flat: List[str] = []
         for _, v in metrics.items():
             flat.extend(_safe_list(v))
@@ -188,23 +148,16 @@ def _flatten_metrics(metrics: Any, lang: str = "en") -> List[str]:
     return _safe_list(metrics)
 
 
-def _normalize_templates(x: Any, lang: str = "en") -> List[str]:
-    x = _pick_lang(x, lang=lang)
-    t = _safe_list(x)
-    if len(t) < 2:
-        t.extend([
-            "Delivered {scope} improvements using {tool_or_tech}; reduced {metric} by {value}.",
-            "Implemented {control_or_feature} across {environment}; improved reliability/security and documented SOPs.",
-        ])
-    return t
-
-
-def _normalize_section_priority(x: Any, lang: str = "en") -> List[str]:
-    x = _pick_lang(x, lang=lang)
+def _normalize_section_priority(x: Any) -> List[str]:
     items = _safe_list(x)
     if not items:
-        return ["Professional Experience", "Summary", "Technical Skills", "Education", "Certifications"]
-
+        return [
+            "Professional Experience",
+            "Summary",
+            "Technical Skills",
+            "Education",
+            "Certifications",
+        ]
     norm_map = {
         "experience": "Professional Experience",
         "experience / projects": "Professional Experience",
@@ -217,106 +170,30 @@ def _normalize_section_priority(x: Any, lang: str = "en") -> List[str]:
         "education": "Education",
         "certifications": "Certifications",
     }
-    out = [norm_map.get(s.strip().lower(), s) for s in items]
-    return _dedupe_preserve(out)
+    out = []
+    for s in items:
+        key = s.strip().lower()
+        out.append(norm_map.get(key, s))
+    seen = set()
+    ded = []
+    for s in out:
+        if s.lower() in seen:
+            continue
+        seen.add(s.lower())
+        ded.append(s)
+    return ded
 
 
-# ---------------------------
-# Seeding: copy bundled repo profiles/libraries into user data folder (first run)
-# ---------------------------
-def _seed_from_source(src_root: Path) -> None:
-    """
-    Copy ats_profiles from src_root into USER ATS_ROOT_DIR if missing.
-    Does not overwrite user's existing files.
-    """
-    _ensure_dirs()
-
-    def copy_tree_if_missing(src: Path, dst: Path) -> None:
-        if not src.exists():
-            return
-        dst.mkdir(parents=True, exist_ok=True)
-        for p in src.rglob("*"):
-            if p.is_dir():
-                continue
-            rel = p.relative_to(src)
-            out = dst / rel
-            if out.exists():
-                continue
-            out.parent.mkdir(parents=True, exist_ok=True)
-            shutil.copy2(p, out)
-
-    # 1) profiles: allow both root-yaml and profiles/
-    # Copy root yaml files into USER_PROFILES_DIR
-    if src_root.exists():
-        for fn in src_root.glob("*.yaml"):
-            out = USER_PROFILES_DIR / fn.name
-            if not out.exists():
-                shutil.copy2(fn, out)
-
-    # Copy ats_profiles/profiles -> USER_PROFILES_DIR
-    if (src_root / "profiles").exists():
-        copy_tree_if_missing(src_root / "profiles", USER_PROFILES_DIR)
-
-    # 2) libraries
-    if (src_root / "libraries").exists():
-        copy_tree_if_missing(src_root / "libraries", USER_LIBRARIES_DIR)
+def _normalize_templates(x: Any) -> List[str]:
+    t = _safe_list(x)
+    if len(t) < 2:
+        t.extend([
+            "Delivered {scope} improvements using {tool_or_tech}; reduced {metric} by {value}.",
+            "Implemented {control_or_feature} across {environment}; improved reliability/security and documented SOPs.",
+        ])
+    return t
 
 
-def ensure_seeded() -> None:
-    """
-    Ensure ATS folder exists and is prepopulated from:
-    - PyInstaller bundle ats_profiles/ (if frozen)
-    - repo ats_profiles/ (if running from source)
-    """
-    _ensure_dirs()
-
-    # Prefer bundle if available
-    b = _bundle_root()
-    if b is not None and b.exists():
-        _seed_from_source(b)
-        return
-
-    # Source run: seed from repo (optional)
-    if REPO_ATS_ROOT.exists():
-        _seed_from_source(REPO_ATS_ROOT)
-
-
-# ---------------------------
-# Profile path resolution
-# ---------------------------
-def profile_path(profile_id: str) -> Path:
-    """
-    Returns absolute path to the user's profile YAML file (preferred location).
-    Accepts both "cyber_security" and "cyber_security.yaml"
-    """
-    ensure_seeded()
-
-    pid = (profile_id or "").strip()
-    if not pid:
-        raise ProfileError("Empty profile id")
-    if not pid.endswith(".yaml"):
-        pid += ".yaml"
-    return USER_PROFILES_DIR / pid
-
-
-def _library_core_path() -> Path:
-    ensure_seeded()
-    return USER_LIBRARIES_DIR / "core_en_ro.yaml"
-
-
-def _library_domain_path(domain_id: str) -> Path:
-    ensure_seeded()
-    did = (domain_id or "").strip()
-    if not did:
-        return USER_DOMAIN_LIB_DIR / "core.yaml"  # won't exist; safe
-    if not did.endswith(".yaml"):
-        did += ".yaml"
-    return USER_DOMAIN_LIB_DIR / did
-
-
-# ---------------------------
-# Loading / normalizing
-# ---------------------------
 def validate_profile(profile: Dict[str, Any]) -> Tuple[bool, List[str]]:
     warnings = []
     if not isinstance(profile, dict):
@@ -327,57 +204,25 @@ def validate_profile(profile: Dict[str, Any]) -> Tuple[bool, List[str]]:
     if not profile.get("title"):
         warnings.append("Missing 'title' (recommended for UI).")
 
-    # Optional: domain recommended (for libraries)
-    if not profile.get("domain"):
-        warnings.append("Missing 'domain' (recommended: enables domain libraries).")
+    if "job_titles" in profile and not isinstance(profile["job_titles"], list):
+        warnings.append("'job_titles' should be a list.")
+
+    if "keywords" in profile and not isinstance(profile["keywords"], dict):
+        warnings.append("'keywords' should be a mapping/object.")
+
+    if "action_verbs" in profile and not isinstance(profile["action_verbs"], list):
+        warnings.append("'action_verbs' should be a list.")
+
+    if "metrics" in profile and not isinstance(profile["metrics"], (list, dict, str)):
+        warnings.append("'metrics' should be a list (or dict/list legacy).")
+
+    if "bullet_templates" in profile and not isinstance(profile["bullet_templates"], (list, str)):
+        warnings.append("'bullet_templates' should be a list (or multiline string).")
 
     return True, warnings
 
 
-def _load_yaml_file(path: Path) -> Dict[str, Any]:
-    if not path.exists():
-        return {}
-    raw = yaml.safe_load(_read_text(path))
-    if raw is None:
-        return {}
-    if not isinstance(raw, dict):
-        raise ProfileError(f"Invalid YAML in {path.name}: root must be a mapping/object")
-    return raw
-
-
-def _normalize_keywords(profile: Dict[str, Any], lang: str) -> Dict[str, List[str]]:
-    """
-    Enforce keyword buckets (each bucket is list[str] after language pick).
-    Supports EN/RO dict values per bucket.
-    """
-    kw = _safe_dict(profile.get("keywords"))
-    # allow legacy group names mapped into technologies
-    technologies = _merge_lists(
-        _safe_list(_pick_lang(kw.get("technologies"), lang)),
-        _safe_list(_pick_lang(kw.get("services"), lang)),
-    )
-    technologies = _merge_lists(technologies, _safe_list(_pick_lang(kw.get("platforms"), lang)))
-    technologies = _merge_lists(technologies, _safe_list(_pick_lang(kw.get("languages"), lang)))
-    technologies = _merge_lists(technologies, _safe_list(_pick_lang(kw.get("concepts"), lang)))
-
-    out = {
-        "core": _safe_list(_pick_lang(kw.get("core"), lang)),
-        "technologies": technologies,
-        "tools": _safe_list(_pick_lang(kw.get("tools"), lang)),
-        "certifications": _safe_list(_pick_lang(kw.get("certifications"), lang)),
-        "frameworks": _safe_list(_pick_lang(kw.get("frameworks"), lang)),
-        "soft_skills": _safe_list(_pick_lang(kw.get("soft_skills"), lang)),
-    }
-    for k in list(out.keys()):
-        out[k] = _dedupe_preserve(out[k])
-    return out
-
-
-def normalize_profile(profile: Dict[str, Any], fallback_id: str = "", lang: str = "en") -> Dict[str, Any]:
-    """
-    Normalize schema for stable UI/export usage.
-    lang affects picking bilingual dict fields.
-    """
+def normalize_profile(profile: Dict[str, Any], fallback_id: str = "") -> Dict[str, Any]:
     p = dict(profile or {})
 
     pid = (p.get("id") or fallback_id or "").strip()
@@ -385,152 +230,70 @@ def normalize_profile(profile: Dict[str, Any], fallback_id: str = "", lang: str 
         pid = _slugify(fallback_id or "profile")
     p["id"] = pid
 
-    # Domain for libraries
-    p["domain"] = (p.get("domain") or pid).strip()
-
-    # Title
-    title_raw = p.get("title")
-    title = str(_pick_lang(title_raw, lang=lang) or "").strip()
+    title = (p.get("title") or "").strip()
     if not title:
-        jt = _safe_list(_pick_lang(p.get("job_titles"), lang=lang))
+        jt = _safe_list(p.get("job_titles"))
         title = jt[0] if jt else pid.replace("_", " ").title()
-    p["title"] = title_raw if isinstance(title_raw, dict) else title  # keep dict if user uses it
+    p["title"] = title
 
-    # Job titles
-    p["job_titles"] = _safe_list(_pick_lang(p.get("job_titles"), lang=lang))
+    p["job_titles"] = _safe_list(p.get("job_titles"))
+    p["keywords"] = _normalize_keywords(p)
+    p["action_verbs"] = _safe_list(p.get("action_verbs"))
+    p["metrics"] = _flatten_metrics(p.get("metrics"))
+    p["bullet_templates"] = _normalize_templates(p.get("bullet_templates"))
+    p["section_priority"] = _normalize_section_priority(p.get("section_priority"))
 
-    # Keywords buckets
-    p["keywords"] = _normalize_keywords(p, lang=lang)
-
-    # Action verbs / templates / metrics - bilingual dict supported
-    p["action_verbs"] = _dedupe_preserve(_safe_list(_pick_lang(p.get("action_verbs"), lang=lang)))
-    p["metrics"] = _dedupe_preserve(_flatten_metrics(p.get("metrics"), lang=lang))
-    p["bullet_templates"] = _normalize_templates(p.get("bullet_templates"), lang=lang)
-    p["section_priority"] = _normalize_section_priority(p.get("section_priority"), lang=lang)
-
-    # Optional knobs
     p.setdefault("ats_hint", "")
     p.setdefault("notes", "")
 
     return p
 
 
-def _merge_library_into_profile(profile_raw: Dict[str, Any], lib_raw: Dict[str, Any]) -> Dict[str, Any]:
-    """
-    Merge library into profile without clobbering profile-specific customizations.
-    List fields -> concat + dedupe
-    keywords buckets -> merge per bucket
-    bilingual dict fields -> merge per language if dicts
-    """
-    out = dict(profile_raw or {})
-    if not isinstance(lib_raw, dict) or not lib_raw:
+def list_profiles() -> List[Dict[str, str]]:
+    _ensure_dir()
+    root = _profiles_root_dir()
+    out: List[Dict[str, str]] = []
+
+    if not os.path.isdir(root):
         return out
 
-    # Merge simple list fields
-    for k in ("action_verbs", "bullet_templates", "metrics"):
-        if k in lib_raw and k not in out:
-            out[k] = lib_raw.get(k)
-        elif k in lib_raw and k in out:
-            # keep both; will be normalized later (lang-aware)
-            # store as list or dict merged
-            lv = lib_raw.get(k)
-            pv = out.get(k)
-            if isinstance(lv, dict) and isinstance(pv, dict):
-                merged = dict(lv)
-                merged.update(pv)  # profile overrides
-                out[k] = merged
-            elif isinstance(lv, list) and isinstance(pv, list):
-                out[k] = _dedupe_preserve(list(lv) + list(pv))
-            else:
-                # fallback: keep profile
-                out[k] = pv
-
-    # Merge keywords
-    if isinstance(lib_raw.get("keywords"), dict):
-        out_kw = _safe_dict(out.get("keywords"))
-        lib_kw = _safe_dict(lib_raw.get("keywords"))
-        merged_kw = dict(lib_kw)
-        # profile overrides buckets where present
-        merged_kw.update(out_kw)
-        out["keywords"] = merged_kw
-
-    # Merge job_titles/title only if missing
-    if not out.get("title") and lib_raw.get("title"):
-        out["title"] = lib_raw.get("title")
-    if not out.get("job_titles") and lib_raw.get("job_titles"):
-        out["job_titles"] = lib_raw.get("job_titles")
-
-    # Merge section priority
-    if lib_raw.get("section_priority") and not out.get("section_priority"):
-        out["section_priority"] = lib_raw.get("section_priority")
-
-    # Carry ats_hint/notes as fallback
-    if lib_raw.get("ats_hint") and not out.get("ats_hint"):
-        out["ats_hint"] = lib_raw.get("ats_hint")
-
+    for fn in sorted(os.listdir(root)):
+        if not fn.endswith(".yaml"):
+            continue
+        pid = fn[:-5]
+        path = os.path.join(root, fn)
+        title = pid.replace("_", " ").title()
+        try:
+            data = yaml.safe_load(_read_text(path)) or {}
+            if isinstance(data, dict):
+                title = (data.get("title") or "").strip() or title
+        except Exception:
+            pass
+        out.append({"id": pid, "filename": fn, "title": title})
     return out
 
 
-def load_profile(profile_id: str, lang: str = "en") -> Dict[str, Any]:
-    """
-    Load profile YAML from user's profiles dir, merge core+domain libraries, normalize.
-    lang: 'en' or 'ro' for UI/export usage.
-    """
+def load_profile(profile_id: str) -> Dict[str, Any]:
     pid = (profile_id or "").strip()
     if not pid:
         raise ProfileError("No profile selected")
 
     path = profile_path(pid)
-    raw = _load_yaml_file(path)
+    raw = yaml.safe_load(_read_text(path))
+    if raw is None:
+        raw = {}
+    if not isinstance(raw, dict):
+        raise ProfileError("Invalid YAML: root must be a mapping/object")
 
-    if not raw:
-        # As a last resort, try to load from repo root (source run) or bundle root
-        # but seed should have copied it already.
-        raise ProfileError(f"Profile not found: {path}")
-
-    # Determine domain
-    domain_id = (raw.get("domain") or raw.get("id") or pid).strip()
-
-    # Merge libraries (core -> domain -> profile)
-    core_lib = _load_yaml_file(_library_core_path())
-    domain_lib = _load_yaml_file(_library_domain_path(domain_id))
-
-    merged = _merge_library_into_profile(raw, core_lib)
-    merged = _merge_library_into_profile(merged, domain_lib)
-
-    ok, warnings = validate_profile(merged)
-    prof = normalize_profile(merged, fallback_id=pid, lang=lang)
+    _, warnings = validate_profile(raw)
+    prof = normalize_profile(raw, fallback_id=pid)
     prof["_warnings"] = warnings
-    prof["_source_file"] = path.name
+    prof["_source_file"] = os.path.basename(path)
+    prof["_source_path"] = path
     return prof
 
 
-def list_profiles() -> List[Dict[str, str]]:
-    """
-    Returns list of profiles available to UI.
-    Reads from USER_PROFILES_DIR. (Seed ensures defaults exist.)
-    """
-    ensure_seeded()
-    out: List[Dict[str, str]] = []
-    for fn in sorted(USER_PROFILES_DIR.glob("*.yaml")):
-        pid = fn.stem
-        title = pid.replace("_", " ").title()
-        try:
-            data = yaml.safe_load(_read_text(fn)) or {}
-            if isinstance(data, dict):
-                t = data.get("title")
-                # if bilingual dict, prefer en for list display
-                title = str(_pick_lang(t, "en") or title).strip() or title
-        except Exception:
-            pass
-        out.append({"id": pid, "filename": fn.name, "title": title})
-    return out
-
-
 def save_profile_text(profile_id: str, yaml_text: str) -> None:
-    """
-    Save raw YAML text (used by profile editor). Validates parse first.
-    """
     pid = (profile_id or "").strip()
     if not pid:
         raise ProfileError("Empty profile id")
@@ -544,26 +307,16 @@ def save_profile_text(profile_id: str, yaml_text: str) -> None:
     except yaml.YAMLError as e:
         raise ProfileError(f"Invalid YAML: {e}")
 
-    # Keep user's bilingual dicts intact; but ensure id exists
-    parsed["id"] = parsed.get("id") or pid
-    parsed["domain"] = parsed.get("domain") or parsed["id"]
-
-    text_out = yaml.safe_dump(parsed, sort_keys=False, allow_unicode=True)
+    normalized = normalize_profile(parsed, fallback_id=pid)
+    text_out = yaml.safe_dump(normalized, sort_keys=False, allow_unicode=True)
     _write_text(profile_path(pid), text_out)
 
 
 def save_profile_dict(profile: Dict[str, Any], profile_id: Optional[str] = None) -> str:
-    """
-    Save profile dict as YAML. Returns profile id.
-    """
-    ensure_seeded()
     pid = (profile_id or profile.get("id") or "").strip()
     if not pid:
-        pid = _slugify(str(_pick_lang(profile.get("title"), "en") or "profile"))
-    profile = dict(profile or {})
-    profile["id"] = profile.get("id") or pid
-    profile["domain"] = profile.get("domain") or profile["id"]
-
-    text_out = yaml.safe_dump(profile, sort_keys=False, allow_unicode=True)
+        pid = _slugify(profile.get("title", "profile"))
+    normalized = normalize_profile(profile, fallback_id=pid)
+    text_out = yaml.safe_dump(normalized, sort_keys=False, allow_unicode=True)
     _write_text(profile_path(pid), text_out)
     return pid
