@@ -149,6 +149,80 @@ def _dedupe_preserve(items: List[str]) -> List[str]:
         seen.add(key)
         out.append(s)
     return out
+def _merge_bilingual_value(lib_v: Any, prof_v: Any) -> Any:
+    """
+    Merge lib_v into prof_v.
+    Supports:
+      - list -> concat + dedupe
+      - dict bilingual {en: [...], ro: [...]} -> merge per key
+      - strings -> keep profile if present else lib
+    Profile (prof_v) wins when conflict.
+    """
+    if prof_v is None or prof_v == "" or prof_v == [] or prof_v == {}:
+        return lib_v
+
+    # bilingual dict merge
+    if isinstance(lib_v, dict) and isinstance(prof_v, dict):
+        out = dict(lib_v)
+        for k, v in prof_v.items():
+            if k in out and isinstance(out[k], list) and isinstance(v, list):
+                out[k] = _dedupe_preserve(list(out[k]) + list(v))
+            else:
+                out[k] = v  # profile overrides
+        return out
+
+    # list merge
+    if isinstance(lib_v, list) and isinstance(prof_v, list):
+        return _dedupe_preserve(list(lib_v) + list(prof_v))
+
+    # string / fallback -> keep profile
+    return prof_v
+
+
+def _merge_keywords_bilingual(lib_kw: Any, prof_kw: Any) -> Any:
+    """
+    Deep merge for keywords buckets.
+    Each bucket can be:
+      - list[str]
+      - dict[lang] -> list[str]
+    We merge per bucket, and per language if dict.
+    """
+    if not isinstance(lib_kw, dict) and not isinstance(prof_kw, dict):
+        return prof_kw if prof_kw else lib_kw
+
+    lib_kw = lib_kw if isinstance(lib_kw, dict) else {}
+    prof_kw = prof_kw if isinstance(prof_kw, dict) else {}
+
+    buckets = ["core", "technologies", "tools", "certifications", "frameworks", "soft_skills"]
+    out: Dict[str, Any] = {}
+
+    for b in buckets:
+        lv = lib_kw.get(b)
+        pv = prof_kw.get(b)
+        if lv is None and pv is None:
+            continue
+
+        # dict bilingual
+        if isinstance(lv, dict) or isinstance(pv, dict):
+            lv = lv if isinstance(lv, dict) else {}
+            pv = pv if isinstance(pv, dict) else {}
+            merged = dict(lv)
+            for lang_k, lang_v in pv.items():
+                if lang_k in merged and isinstance(merged[lang_k], list) and isinstance(lang_v, list):
+                    merged[lang_k] = _dedupe_preserve(list(merged[lang_k]) + list(lang_v))
+                else:
+                    merged[lang_k] = lang_v
+            out[b] = merged
+        else:
+            # list / string -> normalize to list via _safe_list later, but we can merge lists now
+            out[b] = _merge_bilingual_value(_safe_list(lv), _safe_list(pv))
+
+    # Preserve any extra/legacy buckets too (services/platforms/languages/concepts)
+    for k in ("services", "platforms", "languages", "concepts"):
+        if k in lib_kw or k in prof_kw:
+            out[k] = _merge_bilingual_value(lib_kw.get(k), prof_kw.get(k))
+
+    return out
 
 
 def _merge_lists(base: List[str], extra: List[str]) -> List[str]:
@@ -418,55 +492,31 @@ def normalize_profile(profile: Dict[str, Any], fallback_id: str = "", lang: str 
 def _merge_library_into_profile(profile_raw: Dict[str, Any], lib_raw: Dict[str, Any]) -> Dict[str, Any]:
     """
     Merge library into profile without clobbering profile-specific customizations.
-    List fields -> concat + dedupe
-    keywords buckets -> merge per bucket
-    bilingual dict fields -> merge per language if dicts
+    Order: library -> profile (profile wins)
     """
     out = dict(profile_raw or {})
     if not isinstance(lib_raw, dict) or not lib_raw:
         return out
 
-    # Merge simple list fields
-    for k in ("action_verbs", "bullet_templates", "metrics"):
-        if k in lib_raw and k not in out:
-            out[k] = lib_raw.get(k)
-        elif k in lib_raw and k in out:
-            # keep both; will be normalized later (lang-aware)
-            # store as list or dict merged
-            lv = lib_raw.get(k)
-            pv = out.get(k)
-            if isinstance(lv, dict) and isinstance(pv, dict):
-                merged = dict(lv)
-                merged.update(pv)  # profile overrides
-                out[k] = merged
-            elif isinstance(lv, list) and isinstance(pv, list):
-                out[k] = _dedupe_preserve(list(lv) + list(pv))
-            else:
-                # fallback: keep profile
-                out[k] = pv
+    # --- keywords deep merge (buckets + bilingual) ---
+    out["keywords"] = _merge_keywords_bilingual(lib_raw.get("keywords"), out.get("keywords"))
 
-    # Merge keywords
-    if isinstance(lib_raw.get("keywords"), dict):
-        out_kw = _safe_dict(out.get("keywords"))
-        lib_kw = _safe_dict(lib_raw.get("keywords"))
-        merged_kw = dict(lib_kw)
-        # profile overrides buckets where present
-        merged_kw.update(out_kw)
-        out["keywords"] = merged_kw
+    # --- list-like fields (support bilingual dict too) ---
+    for k in ("action_verbs", "bullet_templates", "metrics", "section_priority"):
+        if k in lib_raw:
+            out[k] = _merge_bilingual_value(lib_raw.get(k), out.get(k))
 
-    # Merge job_titles/title only if missing
-    if not out.get("title") and lib_raw.get("title"):
-        out["title"] = lib_raw.get("title")
-    if not out.get("job_titles") and lib_raw.get("job_titles"):
-        out["job_titles"] = lib_raw.get("job_titles")
-
-    # Merge section priority
-    if lib_raw.get("section_priority") and not out.get("section_priority"):
-        out["section_priority"] = lib_raw.get("section_priority")
-
-    # Carry ats_hint/notes as fallback
+    # --- optional text hints ---
     if lib_raw.get("ats_hint") and not out.get("ats_hint"):
         out["ats_hint"] = lib_raw.get("ats_hint")
+    if lib_raw.get("notes") and not out.get("notes"):
+        out["notes"] = lib_raw.get("notes")
+
+    # --- title / job_titles only as fallback (profile keeps control) ---
+    if lib_raw.get("title") and not out.get("title"):
+        out["title"] = lib_raw.get("title")
+    if lib_raw.get("job_titles") and not out.get("job_titles"):
+        out["job_titles"] = lib_raw.get("job_titles")
 
     return out
 
