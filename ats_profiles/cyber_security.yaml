@@ -1,0 +1,147 @@
+id: cyber_security
+title: Cyber Security / Securitate cibernetica
+job_titles:
+- Pentester
+- Penetration Tester
+- Security Engineer
+- SOC Analyst
+- Cyber Security Analyst
+- Threat Hunter
+- Incident Responder
+- Cloud Security Engineer
+section_priority:
+- Summary
+- Technical Skills
+- Professional Experience
+- Projects
+- Certifications
+- Education
+keywords:
+  core:
+  - Web Application Testing
+  - API Security Testing
+  - Network Penetration Testing
+  - Vulnerability Assessment
+  - Exploit Development
+  - Privilege Escalation
+  - Post-Exploitation
+  - Red Team Operations
+  - SIEM
+  - Incident Response
+  - Threat Detection
+  - Log Analysis
+  technologies:
+  - Web Application Testing
+  - API Security Testing
+  - Network Penetration Testing
+  - Vulnerability Assessment
+  - Exploit Development
+  - Privilege Escalation
+  - Post-Exploitation
+  - Red Team Operations
+  - SIEM
+  - Incident Response
+  - Threat Detection
+  - Log Analysis
+  - Malware Analysis
+  - Threat Hunting
+  - EDR
+  - SOAR
+  - AWS Security
+  - Azure Sentinel
+  - Microsoft Defender for Cloud
+  - GuardDuty
+  - CloudTrail
+  - IAM
+  tools:
+  - Burp Suite
+  - Nmap
+  - Metasploit
+  - Nessus
+  - Wireshark
+  - Splunk
+  - ELK Stack
+  - Zeek
+  - Suricata
+  - SQLmap
+  - Nikto
+  certifications:
+  - ''
+  frameworks:
+  - OWASP Top 10
+  - MITRE ATT&CK
+  - NIST Cybersecurity Framework
+  - CIS Controls
+  - ISO 27001
+  - CVSS
+  - Zero Trust
+  soft_skills:
+  - ''
+action_verbs:
+- Assessed
+- Identified
+- Exploited
+- Validated
+- Triaged
+- Remediated
+- Hardened
+- Monitored
+- Investigated
+- Detected
+- Responded
+- Documented
+- Automated
+- Correlated
+metrics:
+- vulnerability_number_of_vulnerabilities
+- vulnerability_severity_levels
+- vulnerability_false_positive_rate
+- vulnerability_remediation_time_days
+- soc_alerts_triaged
+- soc_incidents_handled
+- soc_mttd
+- soc_mttr
+- soc_sla_compliance
+- coverage_assets_tested
+- coverage_endpoints_monitored
+- coverage_applications_assessed
+- coverage_log_sources_onboarded
+- impact_risk_reduction_percentage
+- impact_attack_surface_reduction
+- impact_time_saved_hours
+bullet_templates:
+- Identified {count} {severity} vulnerabilities across {assets} assets, enabling remediation
+  within {days} days.
+- Conducted {scope} penetration testing aligned with {framework}, reducing risk exposure
+  by {percentage}%.
+- Triaged {alerts} SIEM alerts/day and escalated {sev} incidents, improving MTTD by
+  {percentage}%.
+- Automated detection/response workflows, saving {hours} hours/week and reducing MTTR
+  by {percentage}%.
+template_placeholders:
+- tool
+- scope
+- metric
+- percentage
+- count
+- time
+action_verbs_ro:
+- Implementat
+- Optimizat
+- Automatizat
+- Analizat
+- Proiectat
+- Configurat
+- Monitorizat
+- Investigat
+- Remediat
+- Documentat
+bullet_templates_ro:
+- Identificat {count} vulnerabilitati {severity} pe {assets} active, facilitand remedierea
+  in {days} zile.
+- Efectuat testare de penetrare {scope} aliniata la {framework}, reducand expunerea
+  la risc cu {percentage}%.
+- Triat {alerts} alerte SIEM/zi si escaladat incidente {sev}, imbunatatind MTTD cu
+  {percentage}%.
+- Automatizat fluxuri de detectie/raspuns, economisind {hours} ore/saptamana si reducand
+  MTTR cu {percentage}%.
