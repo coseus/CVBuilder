@@ -1,0 +1,35 @@
+# ats_profiles/libraries/domains/customer_support.yaml
+title:
+  en: Customer Support Domain Library
+  ro: Librărie domeniu Suport Clienți
+
+keywords:
+  core:
+    en:
+      - Ticket Management
+      - Customer Communication
+      - Troubleshooting
+      - SLA
+      - Escalation Management
+      - Knowledge Base
+    ro:
+      - Management tichete
+      - Comunicare cu clienții
+      - Depanare
+      - SLA
+      - Management escaladări
+      - Bază de cunoștințe
+
+  tools:
+    en: [Zendesk, Freshdesk, Jira Service Management, Intercom]
+    ro: [Zendesk, Freshdesk, Jira Service Management, Intercom]
+
+metrics:
+  en:
+    - Maintained CSAT of {value}
+    - Reduced first response time by {value}
+    - Resolved {value} tickets per week
+  ro:
+    - Menținut CSAT de {value}
+    - Redus timpul de prim răspuns cu {value}
+    - Rezolvat {value} tichete/săptămână
