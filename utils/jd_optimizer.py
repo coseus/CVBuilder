@@ -1,372 +1,194 @@
+# utils/jd_optimizer.py
 from __future__ import annotations
 
 import hashlib
 import re
 from dataclasses import dataclass
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Dict, List, Tuple, Optional, Any
 
 
-# ----------------------------
-# Language detection (simple, offline)
-# ----------------------------
-_EN_STOP = {
-    "the","a","an","and","or","to","of","in","on","for","with","as","at","by","from","is","are","was","were",
-    "this","that","these","those","you","we","they","i","he","she","it","our","your","their",
-    "experience","years","year","role","responsibilities","requirements","skills","knowledge",
+# -------------------------
+# Lightweight EN/RO keyword extraction (offline)
+# -------------------------
+
+STOP_EN = {
+    "the", "and", "or", "to", "of", "in", "for", "with", "on", "at", "by", "an", "a",
+    "is", "are", "as", "from", "this", "that", "you", "your", "we", "our", "will",
+    "be", "have", "has", "hands", "using", "use", "used", "into", "across"
 }
-_RO_STOP = {
-    "și","sau","de","din","în","pe","la","cu","ca","prin","pentru","este","sunt","a","un","o","unei","unei",
-    "acest","aceasta","aceste","acei","cei","cea","care","fie","fii","fiecare","anii","an","ani",
-    "experiență","experienta","responsabilități","responsabilitati","cerințe","cerinte","abilități","abilitati",
-    "cunoștințe","cunostinte",
+STOP_RO = {
+    "și", "sau", "de", "din", "la", "în", "pe", "cu", "pentru", "că", "care", "este",
+    "sunt", "un", "o", "ai", "ale", "al", "a", "din", "prin", "se", "sa", "fie"
 }
 
-def detect_lang(text: str, hint: Optional[str] = None) -> str:
-    """
-    Returns 'en' or 'ro'. If hint is provided and valid, uses it.
-    """
-    if hint in ("en", "ro"):
-        return hint
+# Common multiword patterns (expand as needed)
+PHRASES = [
+    "active directory", "azure ad", "entra id", "microsoft 365", "office 365",
+    "incident response", "vulnerability management", "penetration testing",
+    "security operations", "siem", "log management", "threat hunting",
+    "network security", "cloud security", "iam", "identity and access management",
+    "endpoint security", "patch management", "risk management"
+]
+
+# Tool-ish tokens allowed even if short
+ALLOW_SHORT = {"c", "c++", "go", "siem", "edr", "iam", "soc", "splunk", "qradar", "aws", "gcp", "aad"}
+
+
+def _clean_text(s: str) -> str:
+    s = s or ""
+    s = s.replace("\u2013", "-").replace("\u2014", "-")
+    # keep slashes and plus for tokens (c++, azure/ad)
+    s = re.sub(r"[^\w\s\-/\+\.#]", " ", s, flags=re.UNICODE)
+    s = re.sub(r"\s+", " ", s).strip()
+    return s
+
+
+def detect_lang(text: str) -> str:
     t = (text or "").lower()
-    # Count stopwords hits
-    en = sum(1 for w in _EN_STOP if f" {w} " in f" {t} ")
-    ro = sum(1 for w in _RO_STOP if f" {w} " in f" {t} ")
-    # Romanian diacritics heuristic
-    if any(ch in t for ch in "ăâîșşțţ"):
-        ro += 3
-    return "ro" if ro > en else "en"
+    ro_hits = sum(1 for w in ("și", "în", "pentru", "responsabil", "cerințe", "abilități") if w in t)
+    en_hits = sum(1 for w in ("responsibilities", "requirements", "skills", "experience") if w in t)
+    return "ro" if ro_hits > en_hits else "en"
 
 
-# ----------------------------
-# Hashing / normalization
-# ----------------------------
-def _norm_text(s: str) -> str:
-    s = (s or "").strip()
-    s = s.replace("\r\n", "\n").replace("\r", "\n")
-    s = re.sub(r"[ \t]+", " ", s)
-    s = re.sub(r"\n{3,}", "\n\n", s)
-    return s.strip()
-
-def job_hash(text: str) -> str:
-    """
-    Stable hash for a JD. Used as job_id.
-    """
-    n = _norm_text(text).lower()
-    return hashlib.sha256(n.encode("utf-8")).hexdigest()[:12]
+def job_hash(text: str, profile_id: str = "", role_hint: str = "") -> str:
+    base = f"{profile_id}||{role_hint}||{(text or '').strip()}"
+    return hashlib.sha256(base.encode("utf-8")).hexdigest()[:16]
 
 
-# ----------------------------
-# Tokenization helpers
-# ----------------------------
-_WORD_RX = re.compile(r"[A-Za-zĂÂÎȘŞȚŢăâîșşțţ0-9][A-Za-zĂÂÎȘŞȚŢăâîșşțţ0-9\+\#\.\-_/]*")
-
-def _tokens(text: str) -> List[str]:
-    return [m.group(0) for m in _WORD_RX.finditer(text or "")]
-
-def _lower_tokens(text: str) -> List[str]:
-    return [t.lower() for t in _tokens(text)]
-
-def _dedupe_keep_order(items: List[str]) -> List[str]:
-    seen = set()
+def _tokenize(text: str) -> List[str]:
+    t = _clean_text(text).lower()
+    # split, keep dots for things like "microsoft.365" -> normalized later
+    raw = re.split(r"\s+", t)
     out = []
-    for it in items:
-        k = it.strip().lower()
-        if not k or k in seen:
+    for r in raw:
+        r = r.strip().strip(".")
+        if not r:
             continue
-        seen.add(k)
-        out.append(it.strip())
+        out.append(r)
     return out
 
 
-# ----------------------------
-# Keyword bank from profile (already normalized by utils/profiles.py)
-# ----------------------------
-def build_keyword_bank(profile: Dict[str, Any]) -> Dict[str, List[str]]:
-    """
-    Returns keyword buckets. Each bucket is list[str].
-    Expected schema:
-      profile['keywords'] = { core, technologies, tools, certifications, frameworks, soft_skills }
-    """
-    kw = profile.get("keywords") if isinstance(profile, dict) else {}
-    if not isinstance(kw, dict):
-        return {
-            "core": [], "technologies": [], "tools": [], "certifications": [], "frameworks": [], "soft_skills": []
-        }
+def extract_keywords(text: str, lang: Optional[str] = None, max_terms: int = 80) -> List[str]:
+    if not text or not str(text).strip():
+        return []
+    lang = lang or detect_lang(text)
+    stop = STOP_RO if lang == "ro" else STOP_EN
 
-    out = {}
-    for k in ("core","technologies","tools","certifications","frameworks","soft_skills"):
-        v = kw.get(k, [])
-        if isinstance(v, list):
-            out[k] = [str(x).strip() for x in v if str(x).strip()]
-        elif isinstance(v, str):
-            out[k] = [s.strip() for s in v.splitlines() if s.strip()]
-        else:
-            out[k] = []
-    return out
+    t = " " + _clean_text(text).lower() + " "
 
+    # 1) phrases first
+    found = []
+    for p in PHRASES:
+        if f" {p} " in t:
+            found.append(p)
 
-# ----------------------------
-# Phrase matching (multiword-safe)
-# ----------------------------
-def _compile_phrases(phrases: List[str]) -> List[Tuple[str, re.Pattern]]:
-    compiled = []
-    for p in phrases:
-        s = (p or "").strip()
-        if not s:
+    # 2) tokens
+    tokens = _tokenize(text)
+
+    # normalize tokens, drop stopwords, very short noise
+    candidates = []
+    for tok in tokens:
+        if tok in stop:
             continue
-        # Escape and allow flexible whitespace / separators for multiword terms
-        # e.g. "azure ad" matches "Azure AD" etc.
-        rx = re.escape(s)
-        rx = rx.replace(r"\ ", r"\s+")
-        pat = re.compile(rf"(?<!\w){rx}(?!\w)", re.IGNORECASE)
-        compiled.append((s, pat))
-    return compiled
+        tok2 = tok.replace(".", " ").strip()
+        tok2 = tok2.replace("m365", "microsoft 365")
+        tok2 = tok2.replace("o365", "office 365")
 
-def _count_phrase_hits(text: str, compiled: List[Tuple[str, re.Pattern]]) -> Dict[str, int]:
-    counts: Dict[str, int] = {}
-    for phrase, pat in compiled:
-        hits = len(pat.findall(text or ""))
-        if hits > 0:
-            counts[phrase] = hits
-    return counts
+        if len(tok2) < 3 and tok2 not in ALLOW_SHORT:
+            continue
+        if tok2.isdigit():
+            continue
+        # collapse "azure/ad" to "azure ad"
+        tok2 = tok2.replace("/", " ").replace("-", " ")
+        tok2 = re.sub(r"\s+", " ", tok2).strip()
+        if not tok2:
+            continue
+        candidates.append(tok2)
 
-
-# ----------------------------
-# Candidate extraction (fallback): frequent n-grams
-# ----------------------------
-def _ngram_candidates(text: str, lang: str, max_terms: int = 20) -> List[str]:
-    lt = _lower_tokens(text)
-    stop = _RO_STOP if lang == "ro" else _EN_STOP
-
-    # keep alpha-ish tokens only
-    lt = [t for t in lt if len(t) >= 3 and not t.isdigit()]
-    lt = [t for t in lt if t not in stop]
-
-    # unigram + bigram
+    # frequency score (simple)
     freq: Dict[str, int] = {}
-    for i, w in enumerate(lt):
-        freq[w] = freq.get(w, 0) + 1
-        if i + 1 < len(lt):
-            bg = f"{w} {lt[i+1]}"
-            freq[bg] = freq.get(bg, 0) + 1
+    for c in candidates:
+        freq[c] = freq.get(c, 0) + 1
 
-    # sort by frequency, prefer multiword
-    items = sorted(freq.items(), key=lambda x: (x[1], len(x[0].split())), reverse=True)
+    # combine: phrases boosted
+    for p in found:
+        freq[p] = freq.get(p, 0) + 4
+
+    # rank
+    ranked = sorted(freq.items(), key=lambda kv: (-kv[1], kv[0]))
     out = []
-    for term, c in items:
-        if c < 2 and len(out) >= 8:
-            break
-        if term in stop:
+    seen = set()
+    for term, _ in ranked:
+        key = term.lower()
+        if key in seen:
             continue
+        seen.add(key)
         out.append(term)
         if len(out) >= max_terms:
             break
-    return _dedupe_keep_order(out)
+    return out
 
 
-# ----------------------------
-# Main analysis
-# ----------------------------
-@dataclass
-class JDResult:
-    job_id: str
-    lang: str
-    jd_text: str
-    matched: Dict[str, List[str]]          # bucket -> matched phrases
-    counts: Dict[str, int]                 # phrase -> hits
-    coverage: Dict[str, float]             # bucket -> coverage ratio
-    score: int                             # 0..100
-    suggested_extra_keywords: List[str]     # for modern_keywords_extra
-    suggested_templates: List[str]          # ranked templates
+def derive_role_hint_from_profile(profile: Dict[str, Any]) -> str:
+    """
+    Map profile id/domain to analyzer role hints.
+    Keeps your limited list: security engineer / soc analyst / penetration tester / general cyber security
+    """
+    pid = (profile.get("id") or "").lower().strip()
+    dom = (profile.get("domain") or "").lower().strip()
+    s = f"{pid} {dom}"
+
+    if "soc" in s:
+        return "soc analyst"
+    if "pentest" in s or "penetration" in s:
+        return "penetration tester"
+    if "security_engineer" in s or "sec_eng" in s or "security engineer" in s:
+        return "security engineer"
+    if "cyber" in s or "security" in s:
+        return "general cyber security"
+    return "general cyber security"
+
+
+def get_store(cv: Dict[str, Any]) -> Dict[str, Any]:
+    if "jd_store" not in cv or not isinstance(cv.get("jd_store"), dict):
+        cv["jd_store"] = {}
+    return cv["jd_store"]
+
+
+def load_analysis(cv: Dict[str, Any], job_id: str) -> Dict[str, Any]:
+    store = get_store(cv)
+    return store.get(job_id, {})
+
+
+def save_analysis(cv: Dict[str, Any], job_id: str, analysis: Dict[str, Any]) -> None:
+    store = get_store(cv)
+    store[job_id] = analysis
 
 
 def analyze_job_description(
+    cv: Dict[str, Any],
     jd_text: str,
     profile: Dict[str, Any],
-    lang_hint: Optional[str] = None,
-) -> JDResult:
-    jd = _norm_text(jd_text)
-    if not jd:
-        raise ValueError("Empty Job Description")
+    lang: Optional[str] = None,
+    role_hint: Optional[str] = None,
+) -> Dict[str, Any]:
+    """
+    Computes analysis + persists under cv['jd_store'][job_id].
+    """
+    lang = lang or detect_lang(jd_text)
+    role_hint = role_hint or derive_role_hint_from_profile(profile)
+    pid = (profile.get("id") or "").strip()
+    jid = job_hash(jd_text, profile_id=pid, role_hint=role_hint)
 
-    lang = detect_lang(jd, hint=lang_hint)
-    job_id = job_hash(jd)
+    kws = extract_keywords(jd_text, lang=lang, max_terms=100)
 
-    bank = build_keyword_bank(profile)
-    all_phrases: List[str] = []
-    bucket_phrases: Dict[str, List[str]] = {}
-    for b, phrases in bank.items():
-        bucket_phrases[b] = _dedupe_keep_order([p for p in phrases if p])
-        all_phrases.extend(bucket_phrases[b])
-    all_phrases = _dedupe_keep_order(all_phrases)
-
-    compiled_all = _compile_phrases(all_phrases)
-    counts = _count_phrase_hits(jd, compiled_all)
-
-    matched: Dict[str, List[str]] = {}
-    coverage: Dict[str, float] = {}
-
-    total_phrases = max(1, len(all_phrases))
-    total_matched = 0
-
-    for b, phrases in bucket_phrases.items():
-        m = [p for p in phrases if p in counts]
-        matched[b] = m
-        total_matched += len(m)
-        coverage[b] = (len(m) / max(1, len(phrases))) if phrases else 0.0
-
-    # score: weighted by important buckets
-    # core(30), technologies(20), tools(20), frameworks(10), certs(10), soft(10)
-    weights = {
-        "core": 30, "technologies": 20, "tools": 20, "frameworks": 10, "certifications": 10, "soft_skills": 10
+    analysis = {
+        "job_id": jid,
+        "profile_id": pid,
+        "role_hint": role_hint,
+        "lang": lang,
+        "keywords": kws,
+        "jd_preview": (jd_text or "").strip()[:8000],  # cap
     }
-    score = 0
-    for b, w in weights.items():
-        score += int(round(coverage.get(b, 0.0) * w))
-    score = max(0, min(100, score))
-
-    # Suggested extra keywords: top matched (by hit count) + candidates
-    matched_sorted = sorted(counts.items(), key=lambda x: x[1], reverse=True)
-    top_matched = [k for k, v in matched_sorted[:25]]
-
-    candidates = _ngram_candidates(jd, lang=lang, max_terms=18)
-    # remove candidates that are already matched
-    candidates = [c for c in candidates if c.lower() not in {m.lower() for m in top_matched}]
-
-    suggested_extra_keywords = _dedupe_keep_order(top_matched[:18] + candidates[:12])
-
-    # Template ranking: pick templates that “fit” by keyword presence (simple)
-    templates = profile.get("bullet_templates", [])
-    if not isinstance(templates, list):
-        templates = []
-    # score template by how many matched keywords appear in template string
-    # (usually templates are placeholders; still keep order deterministic)
-    def tmpl_score(t: str) -> int:
-        s = (t or "").lower()
-        # +1 if mentions security / automation / incident / etc. based on lang words
-        bonus = 0
-        for w in ("security","incident","vulnerability","monitor","automate","deploy","optimize","risk","compliance",
-                  "securitate","incident","vulnerabil","monitor","automat","deploy","optimiz","risc","conform"):
-            if w in s:
-                bonus += 1
-        return bonus
-
-    suggested_templates = sorted([str(t) for t in templates if str(t).strip()], key=tmpl_score, reverse=True)[:8]
-
-    return JDResult(
-        job_id=job_id,
-        lang=lang,
-        jd_text=jd,
-        matched=matched,
-        counts=counts,
-        coverage=coverage,
-        score=score,
-        suggested_extra_keywords=suggested_extra_keywords,
-        suggested_templates=suggested_templates,
-    )
-
-
-# ----------------------------
-# Persist in CV dict
-# ----------------------------
-def ensure_jd_store(cv: Dict[str, Any]) -> Dict[str, Any]:
-    """
-    cv['jd_store'] = {
-      job_id: {
-        'lang': 'en'/'ro',
-        'jd_text': '...',
-        'result': {..lightweight..},
-        'overlay': {...}   # keywords/templates applied
-      }
-    }
-    cv['active_job_id'] = job_id
-    """
-    if not isinstance(cv, dict):
-        raise ValueError("cv must be a dict")
-    cv.setdefault("jd_store", {})
-    if not isinstance(cv["jd_store"], dict):
-        cv["jd_store"] = {}
-    cv.setdefault("active_job_id", "")
-    return cv
-
-
-def store_result(cv: Dict[str, Any], res: JDResult) -> None:
-    ensure_jd_store(cv)
-
-    # lightweight result (no heavy objects)
-    cv["jd_store"][res.job_id] = {
-        "lang": res.lang,
-        "jd_text": res.jd_text,
-        "result": {
-            "score": res.score,
-            "coverage": res.coverage,
-            "matched": res.matched,
-            "counts": dict(sorted(res.counts.items(), key=lambda x: x[1], reverse=True)[:50]),
-            "suggested_extra_keywords": res.suggested_extra_keywords[:30],
-            "suggested_templates": res.suggested_templates[:8],
-        },
-        "overlay": {},
-    }
-    cv["active_job_id"] = res.job_id
-
-
-def list_jobs(cv: Dict[str, Any]) -> List[Tuple[str, str]]:
-    ensure_jd_store(cv)
-    jobs = []
-    for job_id, obj in cv["jd_store"].items():
-        if not isinstance(obj, dict):
-            continue
-        lang = obj.get("lang", "en")
-        text = obj.get("jd_text", "")
-        title = (text.splitlines()[0][:60] if text else job_id)
-        jobs.append((f"[{lang}] {title}", job_id))
-    return jobs
-
-
-def build_overlay_from_result(res: JDResult) -> Dict[str, Any]:
-    """
-    Overlay used to influence ATS rewrite + skills keywords per job.
-    """
-    overlay = {
-        "lang": res.lang,
-        "keywords_extra": res.suggested_extra_keywords[:30],
-        "templates_ranked": res.suggested_templates[:8],
-        "matched_buckets": res.matched,
-    }
-    return overlay
-
-
-def apply_overlay_to_cv(cv: Dict[str, Any], overlay: Dict[str, Any]) -> None:
-    """
-    Applies job-specific overlay into CV fields used by Modern export + ATS helper.
-    - Updates modern_keywords_extra (append)
-    - Stores ats_job_overlay for other components (rewrite/templates/scoring)
-    """
-    if not isinstance(cv, dict) or not isinstance(overlay, dict):
-        return
-
-    # Keep overlay in CV for other components
-    cv["ats_job_overlay"] = overlay
-
-    kws = overlay.get("keywords_extra", [])
-    if not isinstance(kws, list):
-        kws = []
-
-    # Update modern_keywords_extra (newline separated)
-    existing = (cv.get("modern_keywords_extra") or "").strip()
-    existing_lines = [x.strip() for x in existing.splitlines() if x.strip()]
-    merged = existing_lines + [str(x).strip() for x in kws if str(x).strip()]
-    # dedupe
-    seen = set()
-    out = []
-    for k in merged:
-        low = k.lower()
-        if low in seen:
-            continue
-        seen.add(low)
-        out.append(k)
-
-    cv["modern_keywords_extra"] = "\n".join(out).strip()
-
-    # Also store a simple summary string for UI
-    cv["ats_last_job_score"] = overlay.get("score", cv.get("ats_last_job_score", 0))
+    save_analysis(cv, jid, analysis)
+    return analysis
