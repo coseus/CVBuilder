@@ -1,0 +1,13 @@
+title:
+  en: Application Security (AppSec) Domain Library
+  ro: Librărie domeniu Application Security (AppSec)
+keywords:
+  core:
+    en: [Secure SDLC, Code Review, SAST, DAST, Threat Modeling, OWASP]
+    ro: [Secure SDLC, Code review, SAST, DAST, Modelare amenințări, OWASP]
+  tools:
+    en: [Burp Suite, OWASP ZAP, Semgrep, SonarQube]
+    ro: [Burp Suite, OWASP ZAP, Semgrep, SonarQube]
+metrics:
+  en: [Reduced high-risk findings by {value}, Increased remediation SLA compliance by {value}]
+  ro: [Redus findings critice cu {value}, Crescut respectarea SLA remediere cu {value}]
