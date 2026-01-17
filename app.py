@@ -267,7 +267,7 @@ with tab_modern:
         st.markdown("---")
         render_ats_optimizer(cv, profile=profile)
         st.markdown("---")
-        render_jd_ml_offline_panel(cv)
+        render_jd_ml_offline_panel(cv, profile=profile)
         st.markdown("---")
         render_ats_score_dashboard(cv, profile)
         st.markdown("---")
