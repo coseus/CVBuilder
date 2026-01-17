@@ -3,10 +3,6 @@ import streamlit as st
 
 
 def _get_by_path(root, path: str):
-    """
-    Get nested value by a path like:
-      'experienta[0].activitati'
-    """
     cur = root
     tokens = re.findall(r"[a-zA-Z_]\w*|\[\d+\]", path)
     for tok in tokens:
@@ -19,10 +15,6 @@ def _get_by_path(root, path: str):
 
 
 def _set_by_path(root, path: str, value):
-    """
-    Set nested value by a path like:
-      'experienta[0].activitati'
-    """
     cur = root
     tokens = re.findall(r"[a-zA-Z_]\w*|\[\d+\]", path)
     for i, tok in enumerate(tokens):
@@ -42,18 +34,59 @@ def _set_by_path(root, path: str, value):
                 cur = cur[tok]
 
 
-def render_template_helper(profile: dict, key_prefix: str):
+def _dedupe_keep_order(items):
+    seen = set()
+    out = []
+    for it in items or []:
+        s = str(it).strip()
+        if not s:
+            continue
+        k = s.lower()
+        if k in seen:
+            continue
+        seen.add(k)
+        out.append(s)
+    return out
+
+
+def _get_ranked_templates_from_overlay(cv: dict) -> list:
+    """
+    Priority:
+      1) cv['ats_job_overlay']['templates_ranked']
+      2) cv['ats_rewrite_templates_active']
+    """
+    overlay = cv.get("ats_job_overlay", {})
+    if isinstance(overlay, dict):
+        t = overlay.get("templates_ranked")
+        if isinstance(t, list) and t:
+            return [str(x) for x in t if str(x).strip()]
+
+    t2 = cv.get("ats_rewrite_templates_active")
+    if isinstance(t2, list) and t2:
+        return [str(x) for x in t2 if str(x).strip()]
+
+    return []
+
+
+def render_template_helper(profile: dict, cv: dict, key_prefix: str):
+    # Base templates from profile
     templates = []
     if isinstance(profile, dict):
         templates = profile.get("bullet_templates", []) or []
 
-    if not templates:
-        st.caption("No bullet templates in this profile.")
+    # Ranked templates from JD overlay (per job)
+    ranked = _get_ranked_templates_from_overlay(cv)
+
+    # Merge with ranked first
+    merged = _dedupe_keep_order(ranked + (templates if isinstance(templates, list) else []))
+
+    if not merged:
+        st.caption("No bullet templates available (profile + JD overlay empty).")
         return None
 
     return st.selectbox(
         "Pick a template",
-        templates,
+        merged,
         key=f"{key_prefix}__ats_template_pick",
     )
 
@@ -66,19 +99,20 @@ def render_auto_rewrite_box(
     label: str = "Rewrite suggestion",
 ):
     """
-    Backward compatible with older calls that pass field_path.
-
+    Backward compatible:
     - field_path: where to write (e.g., 'experienta[0].activitati')
     - item_key: unique identifier per item (fallback uses field_path)
     """
     if not item_key:
         item_key = field_path
 
-    kp = f"rewrite__{item_key}"
+    # Make sure key is Streamlit-safe (no brackets etc)
+    safe_item_key = re.sub(r"[^a-zA-Z0-9_\-]+", "_", item_key)
+    kp = f"rewrite__{safe_item_key}"
 
     st.markdown("#### Auto-rewrite (ATS)")
 
-    tmpl = render_template_helper(profile, key_prefix=kp)
+    tmpl = render_template_helper(profile, cv=cv, key_prefix=kp)
 
     col1, col2, col3 = st.columns([1, 1, 1.2])
     with col1:
@@ -88,16 +122,13 @@ def render_auto_rewrite_box(
     with col3:
         btn_apply = st.button("Apply selected", key=f"{kp}__btn_apply", use_container_width=True)
 
-    # Store suggestions
     suggestions_key = f"{kp}__suggestions"
     selected_key = f"{kp}__selected"
 
-    # Insert template (just store it as selected)
     if btn_insert and tmpl:
         st.session_state[selected_key] = tmpl
         st.success("Template selected.")
 
-    # Generate deterministic rewrite suggestions (simple heuristic)
     if btn_rewrites:
         try:
             current_text = _get_by_path(cv, field_path)
@@ -105,7 +136,10 @@ def render_auto_rewrite_box(
             current_text = ""
 
         base = (current_text or "").strip()
-        # basic suggestions; you can make them smarter later
+
+        # If we have templates_ranked from overlay, also propose a few “filled” variants
+        ranked = _get_ranked_templates_from_overlay(cv)
+
         suggestions = []
         if base:
             suggestions.append(f"Optimized {base[:60]}... to improve reliability and security.")
@@ -114,11 +148,14 @@ def render_auto_rewrite_box(
             suggestions.append("Implemented security controls (MFA/least privilege), reducing account risk by X%.")
             suggestions.append("Conducted vulnerability assessments across N assets; remediated Y High/Critical issues.")
 
-        st.session_state[suggestions_key] = suggestions
-        st.session_state[selected_key] = suggestions[0] if suggestions else ""
+        # Add ranked templates as suggestions too (so user can apply quickly)
+        for t in ranked[:4]:
+            suggestions.append(t)
+
+        st.session_state[suggestions_key] = _dedupe_keep_order(suggestions)
+        st.session_state[selected_key] = st.session_state[suggestions_key][0] if st.session_state[suggestions_key] else ""
         st.info("Rewrites generated. Pick one and Apply.")
 
-    # Show suggestions + selection
     suggestions = st.session_state.get(suggestions_key, [])
     if suggestions:
         picked = st.radio(
@@ -128,7 +165,6 @@ def render_auto_rewrite_box(
         )
         st.session_state[selected_key] = picked
 
-    # Apply selected to target field_path (append as bullet line)
     if btn_apply:
         selected = st.session_state.get(selected_key, "")
         if selected:
@@ -138,8 +174,8 @@ def render_auto_rewrite_box(
                 current = ""
 
             current = current or ""
-            # Append nicely
             new_line = selected.strip()
+
             if current.strip():
                 updated = current.rstrip() + "\n- " + new_line
             else:
