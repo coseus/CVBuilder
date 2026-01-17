@@ -1,0 +1,13 @@
+title:
+  en: Endpoint Security Domain Library
+  ro: Librărie domeniu Endpoint Security
+keywords:
+  core:
+    en: [Endpoint Hardening, EDR, Patch Compliance, Device Compliance, Secure Baselines]
+    ro: [Întărire endpoint, EDR, Conformitate patch-uri, Conformitate device, Baseline securitate]
+  tools:
+    en: [Microsoft Defender for Endpoint, Intune, Jamf, CrowdStrike]
+    ro: [Microsoft Defender for Endpoint, Intune, Jamf, CrowdStrike]
+metrics:
+  en: [Improved patch compliance to {value}, Reduced endpoint incidents by {value}]
+  ro: [Îmbunătățit conformitatea patch-urilor la {value}, Redus incidentele endpoint cu {value}]
