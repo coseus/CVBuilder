@@ -6,7 +6,65 @@ from typing import Any, Dict, Optional, List
 import streamlit as st
 
 from utils import jd_optimizer
+from pathlib import Path
+import yaml
 
+def _load_domains_index() -> dict:
+    p = Path("ats_profiles") / "domains_index.yaml"
+    if not p.exists():
+        return {}
+    try:
+        d = yaml.safe_load(p.read_text(encoding="utf-8")) or {}
+        return d if isinstance(d, dict) else {}
+    except Exception:
+        return {}
+
+def _domains_from_index(domains_index: dict, lang: str = "en", group_filter: str = "All"):
+    """
+    Returns list of tuples: [(label, domain_id), ...]
+    group_filter: "All" | "IT" | "Non-IT"
+    """
+    groups = domains_index.get("groups", [])
+    if not isinstance(groups, list):
+        return []
+
+    out = []
+    for g in groups:
+        if not isinstance(g, dict):
+            continue
+        gid = str(g.get("id", "")).lower()  # "it" / "non_it"
+        if group_filter == "IT" and gid != "it":
+            continue
+        if group_filter == "Non-IT" and gid != "non_it":
+            continue
+
+        doms = g.get("domains", [])
+        if not isinstance(doms, list):
+            continue
+
+        for d in doms:
+            if not isinstance(d, dict):
+                continue
+            did = (d.get("id") or "").strip()
+            lab = d.get("label") or {}
+            # label bilingual
+            if isinstance(lab, dict):
+                label = lab.get(lang) or lab.get("en") or lab.get("ro") or did
+            else:
+                label = str(lab) if lab else did
+
+            if did:
+                out.append((f"{label} ({did})", did))
+
+    # dedupe by domain_id preserving order
+    seen = set()
+    ded = []
+    for label, did in out:
+        if did in seen:
+            continue
+        seen.add(did)
+        ded.append((label, did))
+    return ded
 
 def _role_options_from_profile(profile: Optional[Dict[str, Any]]) -> List[str]:
     """
