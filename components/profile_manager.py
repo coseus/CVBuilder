@@ -1,155 +1,200 @@
+from __future__ import annotations
+
+import os
+from pathlib import Path
+from typing import Any, Dict, List, Optional
+
 import streamlit as st
 import yaml
 
-from utils.profiles import (
-    ProfileError,
-    list_profiles,
-    load_profile,
-    save_profile_text,
-    save_profile_dict,
-)
+from utils.profiles import list_profiles, load_profile, save_profile_text, ProfileError
 
 
-def _pretty_label(p: dict) -> str:
-    title = (p.get("title") or "").strip()
-    pid = (p.get("id") or "").strip()
-    if title and pid:
-        return f"{title}  ({pid})"
-    return title or pid or "profile"
+def _pick_lang(val: Any, lang: str = "en") -> str:
+    if isinstance(val, dict):
+        if lang in val and val.get(lang):
+            return str(val.get(lang))
+        if "en" in val and val.get("en"):
+            return str(val.get("en"))
+        if "ro" in val and val.get("ro"):
+            return str(val.get("ro"))
+        for _, v in val.items():
+            if v:
+                return str(v)
+    return "" if val is None else str(val)
 
 
-def render_profile_manager(cv: dict):
+def _load_domains_index() -> Dict[str, Any]:
     """
-    ATS Profile manager UI:
-    - Select profile (shows title, stores id in cv['ats_profile'])
-    - Preview normalized profile + warnings
-    - Edit YAML and save
-    - Duplicate as new profile (optional)
-    Returns loaded normalized profile dict (or None).
+    Reads ats_profiles/domains_index.yaml (repo path).
+    If missing, returns {} and UI will fallback gracefully.
     """
-    if not isinstance(cv, dict):
-        st.error("CV invalid.")
-        return None
-
-    # Load profile list
-    profiles = list_profiles()
-    if not profiles:
-        st.warning("No ATS profiles found in ./ats_profiles")
-        return None
-
-    # Build selection lists
-    ids = [p["id"] for p in profiles]
-    labels = [_pretty_label(p) for p in profiles]
-
-    current_id = (cv.get("ats_profile") or "").strip()
-    if current_id not in ids:
-        current_id = ids[0]
-        cv["ats_profile"] = current_id
-
-    current_idx = ids.index(current_id)
-
-    st.markdown("### ATS Profile")
-
-    sel = st.selectbox(
-        "Select profile",
-        options=list(range(len(ids))),
-        index=current_idx,
-        format_func=lambda i: labels[i],
-        key="profile_select_idx",
-    )
-    selected_id = ids[sel]
-    if selected_id != cv.get("ats_profile"):
-        cv["ats_profile"] = selected_id
-        st.rerun()
-
-    # Load selected profile (normalized)
+    path = Path("ats_profiles") / "domains_index.yaml"
+    if not path.exists():
+        return {}
     try:
-        profile = load_profile(cv["ats_profile"])
-    except ProfileError as e:
-        st.error(f"Profile load error: {e}")
+        raw = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+        return raw if isinstance(raw, dict) else {}
+    except Exception:
+        return {}
+
+
+def _domain_group_for(domain_id: str, domains_index: Dict[str, Any]) -> Optional[str]:
+    """
+    Returns group id: 'it' or 'non_it' if found in index.
+    """
+    groups = domains_index.get("groups", [])
+    if not isinstance(groups, list):
+        return None
+    for g in groups:
+        if not isinstance(g, dict):
+            continue
+        gid = g.get("id")
+        doms = g.get("domains", [])
+        if not isinstance(doms, list):
+            continue
+        for d in doms:
+            if isinstance(d, dict) and d.get("id") == domain_id:
+                return str(gid)
+    return None
+
+
+def render_profile_manager(cv: dict) -> Optional[Dict[str, Any]]:
+    """
+    UI: select ATS profile + optional preview/edit.
+    Adds filter: IT / Non-IT (based on ats_profiles/domains_index.yaml).
+
+    Returns loaded profile dict (or None if not loaded).
+    """
+    lang = cv.get("jd_lang") or cv.get("lang") or "en"
+    lang = "ro" if str(lang).lower().startswith("ro") else "en"
+
+    domains_index = _load_domains_index()
+
+    # --- Filter (IT / Non-IT) ---
+    filter_options = ["All", "IT", "Non-IT"]
+    default_filter = cv.get("profile_filter", "All")
+    if default_filter not in filter_options:
+        default_filter = "All"
+
+    colf1, colf2 = st.columns([1, 2], gap="small")
+    with colf1:
+        chosen_filter = st.selectbox(
+            "Filter",
+            filter_options,
+            index=filter_options.index(default_filter),
+            key="profile_filter_select",
+        )
+        cv["profile_filter"] = chosen_filter
+
+    # --- Load available profiles (seeded) ---
+    profiles = list_profiles()  # [{id, filename, title}]
+    # We will augment with domain info (best effort) so we can filter.
+    enriched: List[Dict[str, str]] = []
+
+    for p in profiles:
+        pid = p.get("id", "")
+        title = p.get("title", pid)
+        domain = ""
+
+        # Best-effort: read profile domain without fully loading/merging libraries
+        # (safe + fast)
+        try:
+            # Try load to get domain/title merged properly if possible
+            prof = load_profile(pid, lang=lang)
+            domain = str(prof.get("domain") or pid)
+            # Prefer bilingual title if present
+            title = _pick_lang(prof.get("title"), lang=lang) or title
+        except Exception:
+            domain = pid
+
+        group = _domain_group_for(domain, domains_index)
+        enriched.append({
+            "id": pid,
+            "title": title,
+            "domain": domain,
+            "group": group or "",  # it / non_it / ""
+        })
+
+    # Apply filter
+    if chosen_filter == "IT":
+        enriched = [x for x in enriched if x.get("group") == "it"]
+    elif chosen_filter == "Non-IT":
+        enriched = [x for x in enriched if x.get("group") == "non_it"]
+
+    # Sort alphabetic by displayed title
+    enriched = sorted(enriched, key=lambda x: (x.get("title") or "").lower())
+
+    # Build select choices
+    if not enriched:
+        st.warning("No profiles found for this filter.")
         return None
 
-    # Show warnings if any
-    warnings = profile.get("_warnings", [])
-    if warnings:
-        for w in warnings:
-            st.warning(w)
+    # Current selection
+    current_pid = cv.get("ats_profile", "cyber_security")
+    ids = [x["id"] for x in enriched]
+    if current_pid not in ids:
+        current_pid = ids[0]
+        cv["ats_profile"] = current_pid
 
-    # Buttons row
-    c1, c2, c3 = st.columns([1, 1, 1])
-    with c1:
-        if st.button("Reload profile", use_container_width=True, key="profile_reload_btn"):
-            st.rerun()
-    with c2:
-        if st.button("Show preview", use_container_width=True, key="profile_preview_btn"):
-            st.session_state["profile_preview_open"] = True
-    with c3:
-        if st.button("Edit YAML", use_container_width=True, key="profile_edit_open_btn"):
-            st.session_state["profile_editor_open"] = True
+    # Display label: "Title (id) — domain"
+    labels = []
+    for x in enriched:
+        dom = x.get("domain") or x["id"]
+        labels.append(f"{x.get('title') or x['id']} ({x['id']}) — {dom}")
 
-    # Preview
-    if st.session_state.get("profile_preview_open", False):
-        with st.expander("Profile preview (normalized)", expanded=True):
-            # Hide internal keys in preview
-            preview = {k: v for k, v in profile.items() if not str(k).startswith("_")}
-            st.json(preview)
+    idx = ids.index(current_pid)
 
-    # Editor (raw YAML)
-    if st.session_state.get("profile_editor_open", False):
-        with st.expander("Edit profile YAML", expanded=True):
-            # We edit YAML derived from normalized profile (keeps schema consistent)
-            editable = {k: v for k, v in profile.items() if not str(k).startswith("_")}
-            yaml_text_default = yaml.safe_dump(editable, sort_keys=False, allow_unicode=True)
+    selected_label = st.selectbox(
+        "ATS Profile",
+        labels,
+        index=idx,
+        key="ats_profile_selectbox",
+    )
+    selected_id = ids[labels.index(selected_label)]
+    cv["ats_profile"] = selected_id
 
-            yaml_text = st.text_area(
-                "YAML",
-                value=st.session_state.get("profile_yaml_buffer", yaml_text_default),
-                height=420,
-                key="profile_yaml_editor",
+    # Load selected profile (full merged core+domain+profile)
+    try:
+        prof = load_profile(selected_id, lang=lang)
+    except ProfileError as e:
+        st.error(str(e))
+        return None
+
+    # Warnings (non-fatal)
+    warns = prof.get("_warnings") or []
+    if warns:
+        with st.expander("Profile warnings", expanded=False):
+            for w in warns:
+                st.warning(w)
+
+    # Preview/edit raw YAML (optional)
+    with st.expander("Preview / Edit YAML", expanded=False):
+        # Show merged profile (read-only) AND allow editing the profile file itself
+        st.caption("Editing saves only the profile YAML (not the libraries). Libraries are auto-merged at load.")
+        # Load raw profile yaml from user folder path (display/edit)
+        # We'll reuse utils.profiles.save_profile_text to save safely.
+        try:
+            # the saved file is in user data dir, but save_profile_text knows the correct path
+            raw_yaml = yaml.safe_dump(
+                {k: v for k, v in prof.items() if not str(k).startswith("_")},
+                sort_keys=False,
+                allow_unicode=True,
             )
-            st.session_state["profile_yaml_buffer"] = yaml_text
+        except Exception:
+            raw_yaml = ""
 
-            e1, e2, e3 = st.columns([1, 1, 1])
-            with e1:
-                if st.button("Save", use_container_width=True, key="profile_save_btn"):
-                    try:
-                        save_profile_text(cv["ats_profile"], yaml_text)
-                        st.success("Saved.")
-                        # clear buffer so it reloads from disk next time
-                        st.session_state.pop("profile_yaml_buffer", None)
-                        st.rerun()
-                    except ProfileError as e:
-                        st.error(str(e))
-                    except Exception as e:
-                        st.error(f"Save failed: {e}")
-
-            with e2:
-                # Duplicate as new profile id
-                new_id = st.text_input(
-                    "Duplicate as id",
-                    value=f"{cv['ats_profile']}_copy",
-                    key="profile_dup_id",
-                    help="Creates a new YAML in ./ats_profiles",
-                )
-                if st.button("Duplicate", use_container_width=True, key="profile_duplicate_btn"):
-                    try:
-                        # Parse YAML in editor and save as new id
-                        parsed = yaml.safe_load(yaml_text) or {}
-                        if not isinstance(parsed, dict):
-                            st.error("YAML root must be an object (mapping).")
-                        else:
-                            pid = save_profile_dict(parsed, profile_id=new_id.strip())
-                            st.success(f"Created: {pid}")
-                            cv["ats_profile"] = pid
-                            st.session_state.pop("profile_yaml_buffer", None)
-                            st.rerun()
-                    except Exception as e:
-                        st.error(f"Duplicate failed: {e}")
-
-            with e3:
-                if st.button("Close editor", use_container_width=True, key="profile_close_editor_btn"):
-                    st.session_state["profile_editor_open"] = False
-                    st.session_state.pop("profile_yaml_buffer", None)
+        new_yaml = st.text_area("Profile YAML", value=raw_yaml, height=360, key=f"yaml_edit_{selected_id}")
+        col1, col2 = st.columns(2)
+        with col1:
+            if st.button("Save profile YAML", key=f"btn_save_profile_{selected_id}"):
+                try:
+                    save_profile_text(selected_id, new_yaml)
+                    st.success("Saved.")
                     st.rerun()
+                except Exception as e:
+                    st.error(f"Save failed: {e}")
+        with col2:
+            st.caption("Tip: keep `domain:` set to match a file in libraries/domains/.")
 
-    return profile
+    return prof
