@@ -219,7 +219,9 @@ with tab_modern:
 
     # Load selected ATS profile (user-editable YAML in ./ats_profiles)
     try:
-        profile = load_profile(cv.get("ats_profile", "cyber_security"))
+        from utils.profiles import load_profile
+        lang = cv.get("jd_lang", "en")  # sau cv.get("lang","en") dacă ai
+        profile = load_profile(cv.get("ats_profile", "cyber_security"), lang=lang)
     except ProfileError:
         profile = load_profile("cyber_security")
         cv["ats_profile"] = "cyber_security"
