@@ -63,6 +63,30 @@ def _ensure_dirs() -> None:
     USER_PROFILES_DIR.mkdir(parents=True, exist_ok=True)
     USER_DOMAIN_LIB_DIR.mkdir(parents=True, exist_ok=True)
 
+# ---------------------------
+# domains_index.yaml helpers (for UI filters + role hints)
+# ---------------------------
+def domains_index_path() -> Path:
+    """
+    Returns the user-data path to domains_index.yaml (seeded from bundle/repo).
+    """
+    ensure_seeded()
+    return ATS_ROOT_DIR / "domains_index.yaml"
+
+
+def load_domains_index() -> Dict[str, Any]:
+    """
+    Loads domains_index.yaml from user-data (preferred). If missing, returns {}.
+    """
+    p = domains_index_path()
+    if not p.exists():
+        return {}
+    try:
+        raw = yaml.safe_load(_read_text(p)) or {}
+        return raw if isinstance(raw, dict) else {}
+    except Exception:
+        return {}
+
 
 def _is_frozen() -> bool:
     return bool(getattr(sys, "frozen", False)) and hasattr(sys, "_MEIPASS")
@@ -320,7 +344,12 @@ def _seed_from_source(src_root: Path) -> None:
     if (src_root / "libraries").exists():
         copy_tree_if_missing(src_root / "libraries", USER_LIBRARIES_DIR)
 
-
+    idx = src_root / "domains_index.yaml"
+    if idx.exists():
+        out_idx = ATS_ROOT_DIR / "domains_index.yaml"
+        if not out_idx.exists():
+            out_idx.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(idx, out_idx)
 def ensure_seeded() -> None:
     """
     Ensure ATS folder exists and is prepopulated from:
