@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import streamlit as st
 from typing import Any, Dict, List
+from utils.profiles import load_domains_index
 
 from utils.jd_optimizer import (
     analyze_jd,
