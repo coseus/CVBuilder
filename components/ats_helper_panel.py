@@ -1,51 +1,98 @@
 # components/ats_helper_panel.py
 from __future__ import annotations
 
+import streamlit as st
 from typing import Any, Dict, List
 
-import streamlit as st
-
 from utils import jd_optimizer
+from utils.profiles import load_profile, ProfileError
 
 
-def render_ats_helper_panel(cv: Dict[str, Any], key_prefix: str = "ats_help") -> None:
-    st.subheader("ATS Helper (keywords • metrics • verbs • templates)")
-    st.caption("Folosește Job Description-ul shared. Aici vezi resursele din profil + ce a extras analyzer-ul.")
-
+def render_ats_helper_panel(cv: Dict[str, Any], key_prefix: str = "ats_help", profile: Dict[str, Any] | None = None):
+    """
+    ATS Helper: shows verbs/templates/metrics/keywords from merged profile+libraries.
+    Uses ONE shared JD text (cv["jd_text"]/cv["job_description"]) managed by jd_optimizer.
+    """
     jd_optimizer.ensure_jd_state(cv)
-    jd_optimizer.auto_update_on_change(cv)
 
-    lang = (cv.get("jd_lang") or "en").lower()
-    jd = (cv.get("job_description") or "").strip()
+    # Load profile if not provided (so app.py doesn't have to pass it)
+    if profile is None:
+        pid = cv.get("ats_profile", "cyber_security")
+        try:
+            profile = load_profile(pid, lang="en")
+        except Exception:
+            profile = {"keywords": {}, "action_verbs": [], "metrics": [], "bullet_templates": []}
 
-    if not jd:
-        st.info("Pune Job Description în panoul shared pentru a popula automat keywords/templates.")
-        return
+    st.subheader("ATS Helper (keywords • metrics • verbs • templates)")
 
-    cov = float(cv.get("jd_coverage", 0.0) or 0.0)
-    st.markdown(f"**JD coverage (top keywords):** {cov*100:.0f}%")
+    # Single JD input (shared everywhere)
+    jd_text = jd_optimizer.get_current_jd(cv)
+    new_text = st.text_area(
+        "Job Description (paste here) — used for keyword match + offline analyzer",
+        value=jd_text,
+        height=160,
+        key=f"{key_prefix}_jd",
+    )
+    if new_text != jd_text:
+        jd_optimizer.set_current_jd(cv, new_text)
 
-    col1, col2 = st.columns(2)
+    # quick analyze
+    analysis = jd_optimizer.get_current_analysis(cv)
+
+    col1, col2 = st.columns(2, gap="large")
+
     with col1:
-        st.markdown("**Missing keywords (top 30):**")
-        missing = (cv.get("jd_missing") or [])[:30]
-        st.write(", ".join(missing) if missing else "—")
+        st.markdown("**Coverage**")
+        st.write(f"{analysis.get('coverage', 0):.1f}% keywords found in CV")
 
-        if st.button("Apply missing → Modern: Extra keywords", use_container_width=True, key=f"{key_prefix}__apply_missing"):
-            jd_optimizer.apply_missing_to_extra_keywords(cv, limit=25)
-            st.success("Applied into Modern → Extra keywords.")
+        missing = analysis.get("missing", [])[:25]
+        if missing:
+            st.markdown("**Missing keywords (top)**")
+            st.write(", ".join(missing))
+        else:
+            st.success("Nice — no missing keywords detected (top set).")
+
+        if st.button("Auto-apply missing → Modern keywords", key=f"{key_prefix}_apply_kw", use_container_width=True):
+            jd_optimizer.apply_auto_to_modern_skills(cv, analysis)
+            st.success("Applied into Modern → Keywords (extra).")
             st.rerun()
 
     with col2:
-        st.markdown("**Active rewrite templates (for this job):**")
-        templates = cv.get("ats_rewrite_templates_active", []) or []
-        if not templates:
-            st.caption("No active templates yet. Use JD Analyzer → Update rewrite templates.")
-        else:
-            for t in templates[:12]:
-                st.write("• " + str(t))
+        kw = (profile or {}).get("keywords", {}) or {}
+        st.markdown("**Profile keywords (merged libraries)**")
+        for bucket in ["core", "technologies", "tools", "certifications", "frameworks", "soft_skills"]:
+            vals = kw.get(bucket, [])
+            if isinstance(vals, list) and vals:
+                st.caption(bucket.replace("_", " ").title())
+                st.write(", ".join(vals[:30]))
 
-        if st.button("Generate templates now (from JD + profile)", use_container_width=True, key=f"{key_prefix}__gen_templates"):
-            jd_optimizer.update_rewrite_templates_from_jd(cv)
-            st.success("Templates updated.")
-            st.rerun()
+    st.markdown("---")
+
+    # verbs / metrics / templates
+    verbs = (profile or {}).get("action_verbs", []) or []
+    metrics = (profile or {}).get("metrics", []) or []
+    templates = (profile or {}).get("bullet_templates", []) or []
+
+    c3, c4, c5 = st.columns(3, gap="large")
+    with c3:
+        st.markdown("**Action verbs**")
+        if verbs:
+            st.write(", ".join(list(verbs)[:50]))
+        else:
+            st.info("No verbs available in this profile.")
+
+    with c4:
+        st.markdown("**Metrics ideas**")
+        if metrics:
+            for m in list(metrics)[:10]:
+                st.write(f"• {m}")
+        else:
+            st.info("No metrics available in this profile.")
+
+    with c5:
+        st.markdown("**Bullet templates**")
+        if templates:
+            for t in list(templates)[:6]:
+                st.write(f"• {t}")
+        else:
+            st.info("No templates available in this profile.")
