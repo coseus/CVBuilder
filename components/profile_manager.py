@@ -30,17 +30,10 @@ def _pick_lang(val: Any, lang: str = "en") -> str:
 
 def _load_domains_index() -> Dict[str, Any]:
     """
-    Reads ats_profiles/domains_index.yaml (repo path).
-    If missing, returns {} and UI will fallback gracefully.
+    Reads domains_index.yaml from user-data (seeded via utils.profiles).
     """
-    path = Path("ats_profiles") / "domains_index.yaml"
-    if not path.exists():
-        return {}
-    try:
-        raw = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
-        return raw if isinstance(raw, dict) else {}
-    except Exception:
-        return {}
+    return load_domains_index() or {}
+
 
 
 def _domain_group_for(domain_id: str, domains_index: Dict[str, Any]) -> Optional[str]:
