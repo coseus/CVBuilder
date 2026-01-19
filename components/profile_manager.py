@@ -6,9 +6,13 @@ from typing import Any, Dict, List, Optional
 
 import streamlit as st
 import yaml
-
-from utils.profiles import list_profiles, load_profile, save_profile_text, ProfileError
-
+from utils.profiles import (
+    list_profiles,
+    load_profile,
+    save_profile_text,
+    load_domains_index,
+    ProfileError,
+)
 
 def _pick_lang(val: Any, lang: str = "en") -> str:
     if isinstance(val, dict):
