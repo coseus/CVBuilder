@@ -7,6 +7,7 @@ from typing import Any, Dict, List
 from utils import jd_optimizer
 from utils.profiles import load_profile, ProfileError
 
+jd_optimizer.ensure_jd_state(cv)
 
 def render_ats_helper_panel(cv: Dict[str, Any], key_prefix: str = "ats_help", profile: Dict[str, Any] | None = None):
     """
