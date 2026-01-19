@@ -23,6 +23,7 @@ from utils.json_io import import_cv_json, export_cv_json
 from utils.profiles import ProfileError, load_profile
 from utils.pdf_autofill import file_to_cv
 from utils.session import init_session_state, reset_everything, clear_runtime_only, reset_ats_only
+from utils import jd_optimizer
 
 from exporters.pdf_generator import generate_pdf_modern, generate_pdf_europass
 from exporters.docx_generator import generate_docx_modern, generate_docx_europass
