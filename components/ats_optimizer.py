@@ -1,207 +1,187 @@
-# components/ats_optimizer.py
 from __future__ import annotations
 
-from typing import Any, Dict, Optional, List
-
 import streamlit as st
+from typing import Any, Dict, List
 
-from utils import jd_optimizer
-from pathlib import Path
-import yaml
+from utils.jd_optimizer import (
+    analyze_jd,
+    apply_jd_to_cv,
+    jd_hash,
+    load_analysis,
+    role_hints_from_profile,
+    save_analysis,
+)
 
-def _load_domains_index() -> dict:
-    p = Path("ats_profiles") / "domains_index.yaml"
-    if not p.exists():
-        return {}
-    try:
-        d = yaml.safe_load(p.read_text(encoding="utf-8")) or {}
-        return d if isinstance(d, dict) else {}
-    except Exception:
-        return {}
 
-def _domains_from_index(domains_index: dict, lang: str = "en", group_filter: str = "All"):
+def _shared_jd_box(cv: Dict[str, Any], key: str = "shared_jd") -> str:
     """
-    Returns list of tuples: [(label, domain_id), ...]
-    group_filter: "All" | "IT" | "Non-IT"
+    Single source of truth for JD across ALL ATS panels:
+    cv['job_description']
     """
-    groups = domains_index.get("groups", [])
-    if not isinstance(groups, list):
-        return []
+    cv.setdefault("job_description", "")
+    jd = st.text_area(
+        "Job Description (paste once) — shared across ATS panels",
+        value=cv.get("job_description", ""),
+        height=180,
+        key=key,
+        help="Lipeste JD o singura data. Este folosit de Keyword Match + JD Analyzer + ATS Helper.",
+    )
+    cv["job_description"] = jd
+    return jd
 
-    out = []
-    for g in groups:
-        if not isinstance(g, dict):
-            continue
-        gid = str(g.get("id", "")).lower()  # "it" / "non_it"
-        if group_filter == "IT" and gid != "it":
-            continue
-        if group_filter == "Non-IT" and gid != "non_it":
-            continue
 
-        doms = g.get("domains", [])
-        if not isinstance(doms, list):
-            continue
+def _cv_text_for_match(cv: Dict[str, Any]) -> str:
+    parts: List[str] = []
+    for k in ["rezumat_bullets", "modern_skills_headline", "modern_tools", "modern_certs", "modern_keywords_extra"]:
+        v = cv.get(k)
+        if isinstance(v, list):
+            parts.extend([str(x) for x in v])
+        else:
+            parts.append(str(v or ""))
 
-        for d in doms:
-            if not isinstance(d, dict):
-                continue
-            did = (d.get("id") or "").strip()
-            lab = d.get("label") or {}
-            # label bilingual
-            if isinstance(lab, dict):
-                label = lab.get(lang) or lab.get("en") or lab.get("ro") or did
-            else:
-                label = str(lab) if lab else did
+    exp = cv.get("experienta", [])
+    if isinstance(exp, list):
+        for e in exp:
+            if isinstance(e, dict):
+                parts.append(str(e.get("titlu", "")))
+                parts.append(str(e.get("functie", "")))
+                parts.append(str(e.get("angajator", "")))
+                parts.append(str(e.get("activitati", "")))
+                parts.append(str(e.get("tehnologii", "")))
 
-            if did:
-                out.append((f"{label} ({did})", did))
+    edu = cv.get("educatie", [])
+    if isinstance(edu, list):
+        for ed in edu:
+            if isinstance(ed, dict):
+                parts.append(str(ed.get("titlu", "")))
+                parts.append(str(ed.get("organizatie", "")))
+                parts.append(str(ed.get("descriere", "")))
 
-    # dedupe by domain_id preserving order
-    seen = set()
-    ded = []
-    for label, did in out:
-        if did in seen:
-            continue
-        seen.add(did)
-        ded.append((label, did))
-    return ded
+    return "\n".join([p for p in parts if p and p.strip()]).lower()
 
-def _role_options_from_profile(profile: Optional[Dict[str, Any]]) -> List[str]:
+
+def render_ats_optimizer(cv: Dict[str, Any], profile: Dict[str, Any] | None = None) -> None:
     """
-    Prefer profile job_titles, fallback to a small sensible list.
-    """
-    default = ["general", "security engineer", "soc analyst", "penetration tester"]
-    if not isinstance(profile, dict):
-        return default
-
-    jt = profile.get("job_titles", [])
-    if isinstance(jt, list) and jt:
-        # normalize a bit
-        out = []
-        for x in jt:
-            s = str(x).strip().lower()
-            if s and s not in out:
-                out.append(s)
-        return out[:12] if out else default
-
-    return default
-
-
-def render_ats_optimizer(cv: Dict[str, Any], profile: Optional[Dict[str, Any]] = None) -> None:
-    """
-    ATS Optimizer (keyword match) - now reads shared cv['job_description']
-    (NO text_area here; JD is entered once in app.py).
+    Panel 1: ATS Optimizer (keyword match) - uses shared JD.
     """
     st.subheader("ATS Optimizer (keyword match)")
-    st.caption("Folosește Job Description-ul shared de mai sus. Offline, rapid, ATS-friendly.")
+    st.caption("Lipește job description-ul o singură dată. Vezi keywords lipsă rapid, offline.")
 
-    jd_optimizer.ensure_jd_state(cv)
+    jd = _shared_jd_box(cv, key="ats_shared_jd")
 
-    # Auto-update analysis if JD changed
-    jd_optimizer.auto_update_on_change(cv, profile=profile)
-
-    jd = (cv.get("job_description") or "").strip()
-    if not jd:
-        st.info("Pune Job Description în panoul shared (deasupra) ca să vezi analiza.")
+    if not jd.strip():
+        st.info("Paste Job Description ca să vezi keyword coverage.")
         return
 
-    cov = float(cv.get("jd_coverage", 0.0) or 0.0)
-    present = cv.get("jd_present", []) or []
-    missing = cv.get("jd_missing", []) or []
+    lang_hint = st.selectbox(
+        "Language",
+        [("Auto", "auto"), ("English", "en"), ("Română", "ro")],
+        format_func=lambda x: x[0],
+        index=0,
+        key="ats_lang_hint_match",
+    )[1]
 
-    cols = st.columns(3)
-    cols[0].metric("JD keywords (top)", min(45, len(cv.get("jd_keywords", []) or [])))
-    cols[1].metric("Matched", len(present))
-    cols[2].metric("Match %", f"{int(round(cov * 100))}%")
+    role_hint = ""
+    if profile:
+        hints = role_hints_from_profile(profile)
+        role_hint = st.selectbox("Role hint", hints, index=0, key="ats_role_hint_match")
 
-    with st.expander("Matched keywords", expanded=False):
-        st.write(", ".join(present) if present else "—")
+    analysis = analyze_jd(cv, jd, lang_hint=lang_hint, role_hint=role_hint)
 
-    st.markdown("**Missing (candidates to add):**")
-    if not missing:
-        st.success("Arată bine — nu am găsit keywords lipsă în top listă.")
-        return
+    c1, c2 = st.columns(2)
+    with c1:
+        st.markdown("**Matched keywords (top)**")
+        st.write(", ".join(analysis.matched[:50]) if analysis.matched else "—")
+    with c2:
+        st.markdown("**Missing keywords (top)**")
+        st.write(", ".join(analysis.missing[:50]) if analysis.missing else "—")
 
-    st.write(", ".join(missing[:60]))
+    st.progress(analysis.coverage / 100.0)
+    st.caption(f"Keyword coverage (rough): {analysis.coverage}%")
 
-    if st.button("Apply missing → Modern: Extra keywords", type="primary", use_container_width=True, key="btn_apply_missing_kw"):
-        jd_optimizer.apply_missing_to_extra_keywords(cv, limit=25)
-        st.success("Aplicat în Modern → Extra keywords.")
-        st.rerun()
-
-
-def render_jd_ml_offline_panel(cv: Dict[str, Any], profile: Optional[Dict[str, Any]] = None) -> None:
-    """
-    Job Description Analyzer (Offline) - persist per job hash + templates update.
-    (NO text_area here; shared JD is entered once in app.py).
-    """
-    st.subheader("Job Description Analyzer (Offline)")
-    st.caption("Extrage keywords + coverage, salvează analiza per job (hash) și poate aplica automat în Skills / rewrite templates.")
-
-    jd_optimizer.ensure_jd_state(cv)
-
-    role_options = _role_options_from_profile(profile)
-    current = (cv.get("jd_role_hint") or "").strip().lower()
-    if current not in role_options:
-        current = role_options[0]
-    cv["jd_role_hint"] = st.selectbox(
-        "Role hint",
-        role_options,
-        index=role_options.index(current),
-        key="jd_role_hint_select",
-    )
-
-    # Auto-update analysis if JD changed
-    analysis = jd_optimizer.auto_update_on_change(cv, profile=profile)
-
-    jd = (cv.get("job_description") or "").strip()
-    if not jd:
-        st.info("Pune Job Description în panoul shared (deasupra) ca să rulezi analiza.")
-        return
-
-    colA, colB, colC, colD = st.columns([1, 1, 1, 1])
+    st.markdown("---")
+    st.markdown("### Apply missing keywords to Modern → Keywords")
+    colA, colB = st.columns(2)
     with colA:
-        run = st.button("Re-analyze now", use_container_width=True, key="jd_run_now")
+        if st.button("Append missing → Keywords", use_container_width=True, key="btn_apply_missing_append"):
+            apply_jd_to_cv(cv, analysis, mode="append")
+            st.success("Applied (append) to modern_keywords_extra.")
+            st.rerun()
     with colB:
-        apply_missing = st.button("Apply missing → Extra keywords", use_container_width=True, key="jd_apply_missing_btn")
-    with colC:
-        apply_templates = st.button("Update rewrite templates", use_container_width=True, key="jd_apply_templates_btn")
-    with colD:
-        reset_jd = st.button("Reset doar ATS/JD", use_container_width=True, key="jd_reset_only_btn")
-
-    if reset_jd:
-        jd_optimizer.reset_ats_jd_only(cv, keep_history=True)
-        st.success("Reset ATS/JD (experience/education NU au fost șterse).")
-        st.rerun()
-
-    if run:
-        analysis = jd_optimizer.analyze_jd(cv, profile=profile)
-        st.success(f"JD analyzed. Coverage: {float(analysis.get('coverage',0.0))*100:.0f}% (hash: {analysis.get('hash')})")
-        st.rerun()
-
-    # Display analysis
-    cov = float(cv.get("jd_coverage", 0.0) or 0.0)
-    st.markdown(f"**Coverage:** {cov*100:.0f}%")
-    missing = cv.get("jd_missing", []) or []
-
-    if missing:
-        st.warning("Missing keywords (top): " + ", ".join(missing[:20]))
-    else:
-        st.success("No missing keywords detected in top set.")
-
-    with st.expander("Top extracted keywords", expanded=False):
-        st.write((cv.get("jd_keywords") or [])[:60])
-
-    # Apply actions
-    if apply_missing:
-        if not missing:
-            st.info("No missing keywords to apply.")
-        else:
-            jd_optimizer.apply_missing_to_extra_keywords(cv, limit=25)
-            st.success("Applied missing keywords into Modern → Extra keywords.")
+        if st.button("Replace Keywords with missing", use_container_width=True, key="btn_apply_missing_replace"):
+            apply_jd_to_cv(cv, analysis, mode="replace")
+            st.success("Applied (replace) to modern_keywords_extra.")
             st.rerun()
 
-    if apply_templates:
-        jd_optimizer.update_rewrite_templates_from_jd(cv, profile=profile)
-        st.success("Rewrite templates updated for this job (cv['ats_rewrite_templates_active']).")
-        st.rerun()
+
+def render_jd_ml_offline_panel(cv: Dict[str, Any], profile: Dict[str, Any] | None = None) -> None:
+    """
+    Panel 2: Job Description Analyzer (Offline)
+    - Extract keywords + coverage
+    - Persist per job hash
+    - Apply automatically into Skills / rewrite (for now: keywords extra)
+    """
+    st.subheader("Job Description Analyzer (Offline)")
+    st.caption("Extrage keywords + coverage, salvează analiza per job (hash) și poate aplica automat în Skills.")
+
+    jd = _shared_jd_box(cv, key="jd_shared_analyzer")
+
+    lang_hint = st.selectbox(
+        "Language",
+        [("Auto", "auto"), ("English", "en"), ("Română", "ro")],
+        format_func=lambda x: x[0],
+        index=0,
+        key="jd_lang_hint_analyzer",
+    )[1]
+
+    role_hint = ""
+    if profile:
+        hints = role_hints_from_profile(profile)
+        role_hint = st.selectbox(
+            "Role hint (din ATS profile)",
+            hints,
+            index=0,
+            key="jd_role_hint_analyzer",
+            help="Se actualizează automat când schimbi ATS Profile.",
+        )
+    else:
+        role_hint = st.text_input("Role hint (optional)", value="", key="jd_role_hint_free")
+
+    if not jd.strip():
+        st.info("Paste Job Description ca să rulezi analiza.")
+        return
+
+    job_id = jd_hash(jd)
+    st.caption(f"Job hash: `{job_id}`")
+
+    analysis = analyze_jd(cv, jd, lang_hint=lang_hint, role_hint=role_hint)
+
+    st.write(f"Coverage: **{analysis.coverage}%** | Keywords: **{len(analysis.keywords)}** | Missing: **{len(analysis.missing)}**")
+
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        if st.button("Save analysis", use_container_width=True, key="btn_save_analysis"):
+            save_analysis(job_id, jd, analysis)
+            st.success("Saved.")
+    with col2:
+        if st.button("Load saved", use_container_width=True, key="btn_load_analysis"):
+            saved = load_analysis(job_id)
+            if saved:
+                st.success("Loaded saved analysis.")
+                st.session_state["jd_loaded_preview"] = saved
+            else:
+                st.warning("No saved analysis for this hash.")
+    with col3:
+        if st.button("Apply missing → Keywords", use_container_width=True, key="btn_apply_from_analyzer"):
+            apply_jd_to_cv(cv, analysis, mode="append")
+            st.success("Applied to Modern keywords.")
+            st.rerun()
+
+    with st.expander("Show missing keywords (copy)", expanded=False):
+        st.code("\n".join(analysis.missing[:120]) if analysis.missing else "—")
+
+    # Show loaded snapshot if any
+    snap = st.session_state.get("jd_loaded_preview")
+    if isinstance(snap, dict):
+        with st.expander("Loaded snapshot (debug)", expanded=False):
+            st.json(snap)
