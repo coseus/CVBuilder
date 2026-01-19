@@ -1,122 +1,49 @@
 # ats_profiles/domains_index.yaml
-# Used by UI to filter and group domains into IT vs Non-IT.
-# domain_id must match the filename from: ats_profiles/libraries/domains/<domain_id>.yaml
-
-version: 1
+# Used by UI to filter profiles and provide role-hints.
 
 groups:
   - id: it
     label:
       en: IT
       ro: IT
-    domains:
-      - id: cyber_security
-        label:
-          en: Cyber Security
-          ro: Securitate cibernetică
-      - id: soc_analyst
-        label:
-          en: SOC Analyst
-          ro: Analist SOC
-      - id: dfir_incident_response
-        label:
-          en: DFIR / Incident Response
-          ro: DFIR / Răspuns la incidente
-      - id: cloud_security
-        label:
-          en: Cloud Security
-          ro: Securitate Cloud
-      - id: endpoint_security
-        label:
-          en: Endpoint Security
-          ro: Securitate Endpoint
-      - id: grc_compliance
-        label:
-          en: GRC / Compliance
-          ro: GRC / Conformitate
-      - id: application_security_appsec
-        label:
-          en: Application Security (AppSec)
-          ro: Securitate aplicații (AppSec)
-      - id: network_administrator
-        label:
-          en: Network Administrator
-          ro: Administrator rețea
-      - id: system_administrator
-        label:
-          en: System Administrator
-          ro: Administrator sisteme
-      - id: backup_disaster_recovery
-        label:
-          en: Backup & Disaster Recovery
-          ro: Backup & Disaster Recovery
-      - id: data_analyst
-        label:
-          en: Data Analyst
-          ro: Analist date
-      - id: project_management
-        label:
-          en: Project Management (IT)
-          ro: Management de proiect (IT)
-      - id: observability_monitoring
-        label:
-          en: Observability & Monitoring
-          ro: Observabilitate & Monitorizare
-      - id: devops_platform_engineering
-        label:
-          en: DevOps / Platform Engineering
-          ro: DevOps / Platform Engineering
-      - id: hybrid_modern_infrastructure
-        label:
-          en: Hybrid / Modern Infrastructure
-          ro: Infrastructură hibridă / modernă
-      - id: identity_access_management
-        label:
-          en: Identity & Access Management (IAM)
-          ro: Identity & Access Management (IAM)
-      - id: infrastructure_architecture
-        label:
-          en: Infrastructure Architecture
-          ro: Arhitectură infrastructură
-      - id: finops_cloud_cost
-        label:
-          en: FinOps / Cloud Cost
-          ro: FinOps / Costuri Cloud
+    profiles:
+      - cyber_security
+      - soc_analyst
+      - system_administrator
+      - network_administrator
+      - project_manager
+      - accountant
 
   - id: non_it
     label:
       en: Non-IT
       ro: Non-IT
-    domains:
-      - id: finance_accounting
-        label:
-          en: Finance & Accounting
-          ro: Financiar & Contabilitate
-      - id: hr_recruiting
-        label:
-          en: HR & Recruiting
-          ro: HR & Recrutare
-      - id: marketing_growth
-        label:
-          en: Marketing & Growth
-          ro: Marketing & Creștere
-      - id: sales_b2b
-        label:
-          en: Sales (B2B)
-          ro: Vânzări (B2B)
-      - id: customer_support
-        label:
-          en: Customer Support
-          ro: Suport clienți
-      - id: operations_supply_chain
-        label:
-          en: Operations & Supply Chain
-          ro: Operațiuni & Supply Chain
-      - id: administrative_assistant
-        label:
-          en: Administrative Assistant
-          ro: Asistent administrativ
-      - id: project_manager
-        label:
-          en: Project Manager (General)
-          ro: Manager de proiect (General)
+    profiles:
+      - hr_recruiting
+      - marketing_growth
+      - sales_b2b
+      - customer_support
+      - administrative_assistant
+      - finance_accounting
+      - operations_supply_chain
+      - data_analyst
+
+role_hints:
+  it:
+    - security engineer
+    - soc analyst
+    - penetration tester
+    - general cyber security
+    - system administrator
+    - network administrator
+    - devops engineer
+    - cloud engineer
+  non_it:
+    - project manager
+    - hr recruiter
+    - marketing specialist
+    - sales executive
+    - customer support
+    - administrative assistant
+    - accountant
+    - operations coordinator
