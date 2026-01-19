@@ -247,7 +247,8 @@ with tab_modern:
         st.markdown("---")
 
         # ✅ ATS helper panel (keywords/metrics/verbs/templates)
-        render_ats_helper_panel(cv, key_prefix="ats_help_modern")
+        render_ats_helper_panel(cv, key_prefix="ats_help_modern", profile=profile)
+
 
     # ---- Right: photo toggle + profile manager + scoring ----
     with col2:
