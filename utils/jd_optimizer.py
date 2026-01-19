@@ -1,312 +1,321 @@
+# utils/jd_optimizer.py
 from __future__ import annotations
 
 import hashlib
-import json
-import os
 import re
+from collections import Counter
 from dataclasses import dataclass
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Tuple, Optional
 
 
-# ---------------------------
-# Storage (per-job persistence)
-# ---------------------------
+# -------------------------
+# Stopwords (small, fast, offline)
+# -------------------------
+_STOPWORDS_EN = set("""
+a about above after again against all am an and any are as at be because been before being below between both but by
+can did do does doing down during each few for from further had has have having he her here hers herself him himself his how
+i if in into is it its itself just me more most my myself no nor not of off on once only or other our ours ourselves out over
+own same she should so some such than that the their theirs them themselves then there these they this those through to too
+under until up very was we were what when where which while who whom why with you your yours yourself yourselves
+""".split())
 
-def _app_data_dir() -> str:
-    # Streamlit Cloud: filesystem is ephemeral, but still works per session
-    base = os.environ.get("CVBUILDER_DATA_DIR", ".cvbuilder_data")
-    os.makedirs(base, exist_ok=True)
-    return base
+_STOPWORDS_RO = set("""
+și si sau ori in în la pe cu din de a al ai ale alea unei unui un una unui unei care ce că ca pentru prin peste sub sus jos
+este sunt era au avea avem aveam voi tu el ea ei ele noi lor
+""".split())
 
-
-def _jd_db_path() -> str:
-    return os.path.join(_app_data_dir(), "jd_analyses.json")
-
-
-def _load_db() -> Dict[str, Any]:
-    p = _jd_db_path()
-    if not os.path.exists(p):
-        return {}
-    try:
-        with open(p, "r", encoding="utf-8") as f:
-            data = json.load(f)
-        return data if isinstance(data, dict) else {}
-    except Exception:
-        return {}
-
-
-def _save_db(db: Dict[str, Any]) -> None:
-    p = _jd_db_path()
-    try:
-        with open(p, "w", encoding="utf-8") as f:
-            json.dump(db, f, ensure_ascii=False, indent=2)
-    except Exception:
-        # best-effort
-        pass
-
-
-# ---------------------------
-# Language detect (lightweight offline)
-# ---------------------------
-
-_RO_MARKERS = {"și", "sau", "pentru", "care", "din", "fără", "între", "este", "sunt", "când", "trebuie"}
-_EN_MARKERS = {"and", "or", "for", "with", "without", "between", "is", "are", "when", "must", "should"}
-
-
-def detect_lang(text: str, hint: str = "auto") -> str:
-    hint = (hint or "auto").lower()
-    if hint in ("ro", "en"):
-        return hint
-
-    t = (text or "").lower()
-    ro = sum(1 for w in _RO_MARKERS if w in t)
-    en = sum(1 for w in _EN_MARKERS if w in t)
-
-    # diacritics -> RO
-    if re.search(r"[ăâîșț]", t):
-        ro += 2
-
-    if ro > en:
-        return "ro"
-    return "en"
-
-
-# ---------------------------
-# Keyword extraction (offline, EN/RO)
-# ---------------------------
-
-_STOP_EN = {
-    "the","a","an","and","or","to","in","on","for","with","of","from","at","by","as","is","are","be","will",
-    "you","your","we","our","they","their","this","that","these","those","role","team","years","year","must","should",
-    "responsible","responsibility","requirements","skills","experience"
-}
-_STOP_RO = {
-    "și","sau","în","pe","pentru","cu","din","la","de","prin","ca","este","sunt","fi","vei","tu","voi","noi","ei","ele",
-    "acest","această","aceste","acei","rol","echipă","ani","an","trebuie","responsabil","responsabilități","cerințe","abilități",
-    "experiență"
-}
-
-# Keep common tech tokens
+# Keep technical tokens even if short
 _TECH_KEEP = {
-    "aws","azure","gcp","m365","o365","entra","active","directory","ad","iam","vpn","vlan","siem","soc","edr","xdr","splunk",
-    "sentinel","defender","linux","windows","vmware","hyper-v","kubernetes","docker","terraform","ansible",
-    "powershell","bash","python","sql","nginx","apache","firewall","waf","sso","mfa","oauth","saml","oidc",
-    "burp","nmap","metasploit","nessus","qualys"
+    "c#", "c++", ".net", "node.js", "node", "aws", "azure", "gcp", "m365", "o365",
+    "siem", "soc", "edr", "xdr", "iam", "sso", "mfa", "vpn", "vlan", "ad", "entra",
+    "tcp", "udp", "dns", "dhcp", "http", "https", "ssh", "rdp", "sql", "linux", "windows",
+    "kubernetes", "k8s", "docker", "terraform", "ansible",
 }
+
+
+# -------------------------
+# Helpers
+# -------------------------
+def _norm(text: str) -> str:
+    return re.sub(r"\s+", " ", (text or "")).strip()
+
+
+def detect_language(text: str) -> str:
+    """
+    Very lightweight EN/RO detection for offline usage.
+    """
+    t = (text or "").lower()
+    if not t.strip():
+        return "en"
+
+    ro_hits = 0
+    en_hits = 0
+
+    # diacritics
+    if re.search(r"[ăâîșşțţ]", t):
+        ro_hits += 3
+
+    # common RO / EN words
+    ro_hits += len(re.findall(r"\b(și|sau|în|din|pentru|cu|la|pe|care|este|sunt)\b", t))
+    en_hits += len(re.findall(r"\b(the|and|with|to|for|from|in|on|is|are)\b", t))
+
+    return "ro" if ro_hits >= en_hits + 1 else "en"
+
+
+def jd_hash(text: str) -> str:
+    t = (text or "").strip().encode("utf-8")
+    return hashlib.sha256(t).hexdigest()[:16]
+
+
+def ensure_jd_state(cv: Dict[str, Any]) -> None:
+    """
+    Ensure cv has a stable container for JD analyses (persist per job hash).
+    """
+    if not isinstance(cv, dict):
+        return
+    st = cv.get("jd_state")
+    if not isinstance(st, dict):
+        st = {}
+        cv["jd_state"] = st
+
+    st.setdefault("current_hash", "")
+    st.setdefault("current_role_hint", "")
+    st.setdefault("current_lang", "en")
+    st.setdefault("jobs", {})  # hash -> analysis dict
+    if not isinstance(st["jobs"], dict):
+        st["jobs"] = {}
+
+
+def set_current_jd(cv: Dict[str, Any], text: str) -> str:
+    """
+    Single source of truth for JD text:
+      cv["job_description"] AND cv["jd_text"] are kept in sync (back-compat).
+    Returns job hash.
+    """
+    ensure_jd_state(cv)
+    text = text or ""
+    cv["jd_text"] = text
+    cv["job_description"] = text  # keep old key working
+    h = jd_hash(text)
+    cv["jd_state"]["current_hash"] = h
+    cv["jd_state"]["current_lang"] = detect_language(text)
+    return h
+
+
+def get_current_jd(cv: Dict[str, Any]) -> str:
+    """
+    Read JD from the single source of truth.
+    """
+    if not isinstance(cv, dict):
+        return ""
+    return cv.get("jd_text") or cv.get("job_description") or ""
 
 
 def _tokenize(text: str) -> List[str]:
-    t = (text or "").replace("\u2013", "-").replace("\u2014", "-")
-    # allow + # . - in tokens (C++, C#, node.js, etc.)
-    toks = re.findall(r"[a-zA-Z0-9][a-zA-Z0-9\+\#\.\-_/]{1,}", t.lower())
-    return toks
-
-
-def extract_keywords(text: str, lang: str = "en", max_keywords: int = 120) -> List[str]:
-    toks = _tokenize(text)
-    stop = _STOP_RO if lang == "ro" else _STOP_EN
-
-    # simple scoring: frequency, plus boost for tech-ish tokens
-    freq: Dict[str, int] = {}
-    for w in toks:
-        if len(w) < 3:
+    # normalize dashes, punctuation
+    t = (text or "").replace("–", "-").replace("—", "-")
+    # keep words, numbers, dots, plus, hash
+    raw = re.findall(r"[a-zA-Z0-9\.\+#/]{2,}", t.lower())
+    out: List[str] = []
+    for w in raw:
+        w = w.strip().strip("/").strip()
+        if not w:
             continue
-        if w in stop and w not in _TECH_KEEP:
-            continue
-        if re.fullmatch(r"\d+", w):
-            continue
-        freq[w] = freq.get(w, 0) + 1
-
-    scored = []
-    for w, c in freq.items():
-        score = c
-        if w in _TECH_KEEP:
-            score += 3
-        if any(ch in w for ch in ("+", "#", ".", "-", "/")):
-            score += 1
-        scored.append((score, c, w))
-
-    scored.sort(reverse=True)
-    out = []
-    seen = set()
-    for _, _, w in scored:
-        if w in seen:
-            continue
-        seen.add(w)
         out.append(w)
-        if len(out) >= max_keywords:
-            break
     return out
 
 
-# ---------------------------
-# Hashing / persistence per JD
-# ---------------------------
+def extract_keywords(text: str, lang: Optional[str] = None, top_n: int = 60) -> List[str]:
+    """
+    Offline keyword extraction:
+    - tokenization + stopword removal
+    - keep tech tokens
+    - rank by frequency with a light bias toward tech-like tokens
+    """
+    text = text or ""
+    if lang is None:
+        lang = detect_language(text)
 
-def jd_hash(text: str) -> str:
-    t = (text or "").strip().encode("utf-8", errors="ignore")
-    return hashlib.sha1(t).hexdigest()[:16]
+    stop = _STOPWORDS_RO if lang == "ro" else _STOPWORDS_EN
+    toks = _tokenize(text)
+
+    cleaned: List[str] = []
+    for w in toks:
+        if w in _TECH_KEEP:
+            cleaned.append(w)
+            continue
+        if len(w) <= 2:
+            continue
+        if w in stop:
+            continue
+        # drop pure numbers
+        if re.fullmatch(r"\d+", w):
+            continue
+        cleaned.append(w)
+
+    freq = Counter(cleaned)
+
+    def score(tok: str) -> float:
+        base = float(freq[tok])
+        # bias technical-looking tokens
+        if any(ch in tok for ch in [".", "#", "+", "/"]):
+            base += 0.75
+        if tok in _TECH_KEEP:
+            base += 1.5
+        # prefer mid-length tokens
+        if 4 <= len(tok) <= 18:
+            base += 0.25
+        return base
+
+    ranked = sorted(freq.keys(), key=score, reverse=True)
+    # de-dup near duplicates (basic)
+    out: List[str] = []
+    seen = set()
+    for k in ranked:
+        if k in seen:
+            continue
+        seen.add(k)
+        out.append(k)
+        if len(out) >= top_n:
+            break
+
+    return out
 
 
-@dataclass
-class JDAnalysis:
-    lang: str
-    role_hint: str
-    keywords: List[str]
-    matched: List[str]
-    missing: List[str]
-    coverage: int  # 0..100
-
-
-def _flatten_cv_text(cv: Dict[str, Any]) -> str:
+def _cv_text_for_match(cv: Dict[str, Any]) -> str:
+    """
+    Build a string from current CV fields for keyword coverage.
+    """
     parts: List[str] = []
 
-    for k in [
-        "profile_line",
-        "pozitie_vizata",
-        "nume_prenume",
-        "email",
-        "telefon",
-        "adresa",
-        "linkedin",
-        "github",
-        "website",
-        "modern_skills_headline",
-        "modern_tools",
-        "modern_certs",
-        "modern_keywords_extra",
-    ]:
-        v = cv.get(k)
-        if isinstance(v, str) and v.strip():
-            parts.append(v)
+    def add(x: Any):
+        if x is None:
+            return
+        if isinstance(x, str) and x.strip():
+            parts.append(x.strip())
+        elif isinstance(x, list):
+            for it in x:
+                add(it)
+        elif isinstance(x, dict):
+            for _, v in x.items():
+                add(v)
 
-    rb = cv.get("rezumat_bullets", [])
-    if isinstance(rb, list):
-        parts.extend([str(x) for x in rb if str(x).strip()])
+    add(cv.get("rezumat"))
+    add(cv.get("rezumat_bullets"))
+    add(cv.get("modern_skills_headline"))
+    add(cv.get("modern_tools"))
+    add(cv.get("modern_certs"))
+    add(cv.get("modern_keywords_extra"))
 
+    # experience bullets
     exp = cv.get("experienta", [])
     if isinstance(exp, list):
         for e in exp:
             if not isinstance(e, dict):
                 continue
-            for kk in ("titlu", "functie", "angajator", "activitati", "tehnologii"):
-                vv = e.get(kk)
-                if isinstance(vv, str) and vv.strip():
-                    parts.append(vv)
+            add(e.get("functie"))
+            add(e.get("angajator"))
+            add(e.get("titlu"))
+            add(e.get("tehnologii"))
+            add(e.get("activitati"))
 
-    edu = cv.get("educatie", [])
-    if isinstance(edu, list):
-        for ed in edu:
-            if not isinstance(ed, dict):
-                continue
-            for kk in ("titlu", "organizatie", "descriere"):
-                vv = ed.get(kk)
-                if isinstance(vv, str) and vv.strip():
-                    parts.append(vv)
-
-    return "\n".join(parts).lower()
+    return " ".join(parts).lower()
 
 
-def analyze_jd(cv: Dict[str, Any], jd_text: str, lang_hint: str = "auto", role_hint: str = "") -> JDAnalysis:
-    lang = detect_lang(jd_text, hint=lang_hint)
-    kws = extract_keywords(jd_text, lang=lang, max_keywords=140)
-
-    cv_text = _flatten_cv_text(cv)
-    matched = [k for k in kws if k in cv_text]
-    missing = [k for k in kws if k not in cv_text]
-
-    coverage = 0
-    if kws:
-        coverage = int(100 * len(matched) / max(1, len(kws)))
-
-    return JDAnalysis(
-        lang=lang,
-        role_hint=(role_hint or "").strip(),
-        keywords=kws,
-        matched=matched,
-        missing=missing,
-        coverage=coverage,
-    )
+def coverage_report(cv: Dict[str, Any], keywords: List[str]) -> Tuple[List[str], List[str], float]:
+    """
+    Returns (present, missing, coverage_ratio).
+    """
+    hay = _cv_text_for_match(cv)
+    present: List[str] = []
+    missing: List[str] = []
+    for kw in keywords:
+        k = (kw or "").strip().lower()
+        if not k:
+            continue
+        if k in hay:
+            present.append(kw)
+        else:
+            missing.append(kw)
+    ratio = (len(present) / max(1, (len(present) + len(missing)))) * 100.0
+    return present, missing, ratio
 
 
-def save_analysis(job_id: str, jd_text: str, analysis: JDAnalysis) -> None:
-    db = _load_db()
-    db[job_id] = {
-        "jd": jd_text,
-        "lang": analysis.lang,
-        "role_hint": analysis.role_hint,
-        "keywords": analysis.keywords,
-        "matched": analysis.matched,
-        "missing": analysis.missing,
-        "coverage": analysis.coverage,
+def analyze_jd(cv: Dict[str, Any], role_hint: str = "") -> Dict[str, Any]:
+    """
+    Analyze current JD and persist per job hash.
+    """
+    ensure_jd_state(cv)
+    text = get_current_jd(cv)
+    h = set_current_jd(cv, text)
+
+    lang = cv["jd_state"].get("current_lang") or detect_language(text)
+    kws = extract_keywords(text, lang=lang, top_n=70)
+
+    present, missing, ratio = coverage_report(cv, kws)
+
+    analysis = {
+        "hash": h,
+        "lang": lang,
+        "role_hint": (role_hint or "").strip(),
+        "keywords": kws,
+        "present": present,
+        "missing": missing,
+        "coverage": ratio,
     }
-    _save_db(db)
+
+    cv["jd_state"]["jobs"][h] = analysis
+    cv["jd_state"]["current_role_hint"] = analysis["role_hint"]
+    cv["jd_state"]["current_hash"] = h
+    return analysis
 
 
-def load_analysis(job_id: str) -> Optional[Dict[str, Any]]:
-    db = _load_db()
-    v = db.get(job_id)
-    return v if isinstance(v, dict) else None
+def get_current_analysis(cv: Dict[str, Any]) -> Dict[str, Any]:
+    ensure_jd_state(cv)
+    h = cv["jd_state"].get("current_hash") or jd_hash(get_current_jd(cv))
+    jobs = cv["jd_state"].get("jobs", {})
+    if isinstance(jobs, dict) and h in jobs and isinstance(jobs[h], dict):
+        return jobs[h]
+    # fallback: analyze once if missing
+    return analyze_jd(cv, role_hint=cv["jd_state"].get("current_role_hint", ""))
 
 
-# ---------------------------
-# Apply to CV (offline auto-update)
-# ---------------------------
-
-def apply_jd_to_cv(cv: Dict[str, Any], analysis: JDAnalysis, mode: str = "append") -> None:
+def apply_auto_to_modern_skills(cv: Dict[str, Any], analysis: Dict[str, Any], max_add: int = 28) -> None:
     """
-    Applies missing keywords into Modern ATS fields (offline).
-    - mode="append": appends missing keywords into modern_keywords_extra
-    - mode="replace": replaces modern_keywords_extra with missing keywords (first N)
+    Minimal "auto-update" rule:
+    - add missing keywords into modern_keywords_extra (newline separated)
+    - keep it deduped and capped
     """
-    cv.setdefault("modern_keywords_extra", "")
-
-    missing = analysis.missing[:60]  # keep sane
-    if not missing:
+    if not isinstance(cv, dict) or not isinstance(analysis, dict):
+        return
+    missing = analysis.get("missing", [])
+    if not isinstance(missing, list):
         return
 
-    existing_lines = [ln.strip() for ln in str(cv.get("modern_keywords_extra") or "").splitlines() if ln.strip()]
-    existing_set = {x.lower() for x in existing_lines}
+    existing = (cv.get("modern_keywords_extra") or "").splitlines()
+    existing = [x.strip() for x in existing if x.strip()]
+    existing_l = {x.lower() for x in existing}
 
-    new_lines = []
-    for k in missing:
-        if k.lower() in existing_set:
+    to_add: List[str] = []
+    for kw in missing:
+        s = (kw or "").strip()
+        if not s:
             continue
-        new_lines.append(k)
+        if s.lower() in existing_l:
+            continue
+        to_add.append(s)
+        if len(to_add) >= max_add:
+            break
 
-    if not new_lines:
-        return
-
-    if mode == "replace":
-        cv["modern_keywords_extra"] = "\n".join(new_lines)
-        return
-
-    # append
-    combined = existing_lines + new_lines
-    cv["modern_keywords_extra"] = "\n".join(combined)
-
-
-def role_hints_from_profile(profile: Dict[str, Any]) -> List[str]:
-    """
-    Build role hints list from profile job_titles (plus safe defaults).
-    """
-    hints: List[str] = []
-    jt = profile.get("job_titles", [])
-    if isinstance(jt, list):
-        for x in jt:
-            s = str(x).strip()
-            if s:
-                hints.append(s.lower())
-
-    # fallback defaults
-    if not hints:
-        hints = ["general", "it", "operations"]
+    merged = existing + to_add
     # dedupe preserve
+    out: List[str] = []
     seen = set()
-    out = []
-    for h in hints:
-        if h in seen:
+    for x in merged:
+        k = x.lower()
+        if k in seen:
             continue
-        seen.add(h)
-        out.append(h)
-    return out[:12]
+        seen.add(k)
+        out.append(x)
+
+    cv["modern_keywords_extra"] = "\n".join(out).strip()
