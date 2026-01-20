@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import streamlit as st
-from typing import Any, Dict, List
+from typing import Any, Dict
 
 from utils import jd_optimizer
 
@@ -10,8 +10,8 @@ from utils import jd_optimizer
 def render_ats_optimizer(cv: Dict[str, Any], profile: Dict[str, Any] | None = None):
     """
     ATS Optimizer (keyword match) — OFFLINE.
-    Uses the SAME JD field as analyzer/helper:
-      cv["jd_text"] (and back-compat cv["job_description"]).
+    Uses ONE shared JD field:
+      cv["job_description"]
     """
     jd_optimizer.ensure_jd_state(cv)
 
@@ -52,17 +52,15 @@ def render_ats_optimizer(cv: Dict[str, Any], profile: Dict[str, Any] | None = No
 
     with c4:
         if st.button("Re-analyze", use_container_width=True, key="ats_optimizer_reanalyze"):
-            jd_optimizer.analyze_jd(cv, role_hint=cv.get("jd_state", {}).get("current_role_hint", ""))
+            # uses legacy compatible call
+            rh = cv.get("jd_state", {}).get("current_role_hint", "") or ""
+            jd_optimizer.analyze_jd(cv, role_hint=rh, profile=profile)
             st.rerun()
 
 
 def render_jd_ml_offline_panel(cv: Dict[str, Any], profile: Dict[str, Any] | None = None):
     """
-    Wrapper: keeps backward compatibility with your app.py which imports
-    render_jd_ml_offline_panel from components.ats_optimizer.
-
-    If you already have a separate components/jd_ml_offline.py, you can import it here.
-    Otherwise, we provide a minimal offline analyzer panel.
+    Offline JD Analyzer (persist per job hash).
     """
     jd_optimizer.ensure_jd_state(cv)
 
@@ -81,10 +79,17 @@ def render_jd_ml_offline_panel(cv: Dict[str, Any], profile: Dict[str, Any] | Non
         key="jd_ml_offline_role",
         help="Poți pune ceva gen: 'security engineer', 'soc analyst', 'project manager', etc.",
     )
+    if role_hint != (cv.get("jd_state", {}).get("current_role_hint") or ""):
+        jd_optimizer.set_current_role_hint(cv, role_hint)
 
-    analysis = jd_optimizer.analyze_jd(cv, role_hint=role_hint)
+    # legacy call expected by your current panel
+    analysis = jd_optimizer.analyze_jd(cv, role_hint=role_hint, profile=profile)
 
-    st.markdown(f"**Job hash:** `{analysis.get('hash','')}` • **Lang:** `{analysis.get('lang','en')}` • **Coverage:** **{analysis.get('coverage',0):.1f}%**")
+    st.markdown(
+        f"**Job hash:** `{analysis.get('hash','')}` • "
+        f"**Lang:** `{analysis.get('lang','en')}` • "
+        f"**Coverage:** **{analysis.get('coverage',0):.1f}%**"
+    )
 
     missing = analysis.get("missing", [])
     if missing:
@@ -106,5 +111,12 @@ def render_jd_ml_offline_panel(cv: Dict[str, Any], profile: Dict[str, Any] | Non
             if not jobs:
                 st.info("No saved jobs yet.")
             else:
-                for h, a in list(jobs.items())[:10]:
-                    st.write(f"- {h} • {a.get('coverage',0):.1f}% • {a.get('role_hint','')}")
+                # show latest 10 (arbitrary order)
+                shown = 0
+                for h, a in list(jobs.items()):
+                    if shown >= 10:
+                        break
+                    cov = (a or {}).get("coverage", 0.0)
+                    rh = (a or {}).get("role_hint", "") or ""
+                    st.write(f"- `{h}` • {cov:.1f}% • {rh}")
+                    shown += 1
