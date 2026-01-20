@@ -19,9 +19,6 @@ def render_ats_helper_panel(
     Uses ONE shared JD text managed by jd_optimizer (cv["job_description"] / jd state).
     """
 
-    # ✅ MUST be inside function (cv exists only at runtime)
-    jd_optimizer.ensure_jd_state(cv)
-
     # Optional: auto-refresh analysis when JD changes (if implemented in jd_optimizer)
     # Safe-call: if function doesn't exist, it won't break.
     if hasattr(jd_optimizer, "auto_update_on_change"):
