@@ -225,9 +225,9 @@ def extract_keywords(text: str, lang: str = "en", max_keywords: int = 70) -> Lis
     return _dedupe_keep_order(cleaned)[:max_keywords]
 
 
-def analyze_jd(jd_text: str, lang: str = "en", profile: Optional[dict] = None) -> Dict[str, Any]:
+def _analyze_jd_text(jd_text: str, lang: str = "en", profile: Optional[dict] = None) -> Dict[str, Any]:
     """
-    Returns analysis payload (offline).
+    Internal: analyze raw JD text (offline).
     """
     kws = extract_keywords(jd_text, lang=lang, max_keywords=80)
 
@@ -254,12 +254,101 @@ def analyze_jd(jd_text: str, lang: str = "en", profile: Optional[dict] = None) -
         "keywords": kws,
         "profile_id": (profile.get("id") if isinstance(profile, dict) else "") or "",
         "role_hints": role_hints,
-        # to be enriched:
         "coverage": 0.0,
         "missing": [],
         "matched": [],
     }
 
+
+def analyze_jd(
+    cv_or_text: Any,
+    lang: str = "en",
+    profile: Optional[dict] = None,
+    role_hint: Optional[str] = None,
+    jd_text: Optional[str] = None,
+) -> Dict[str, Any]:
+    """
+    Backward-compatible analyzer used by multiple panels.
+
+    Supports BOTH:
+      A) analyze_jd(jd_text: str, lang="en", profile=profile)
+      B) analyze_jd(cv: dict, role_hint="...", profile=profile)   # legacy panel call
+
+    If cv dict is provided:
+      - reads JD from cv["job_description"]
+      - detects lang automatically
+      - enriches with coverage vs CV
+      - applies role_hint override if provided
+    """
+    # --- Case B: called with cv dict (legacy) ---
+    if isinstance(cv_or_text, dict):
+        cv = cv_or_text
+        ensure_jd_state(cv)
+
+        text = (jd_text if isinstance(jd_text, str) else (cv.get("job_description") or "")).strip()
+        if not text:
+            return {
+                "job_id": "",
+                "lang": detect_lang(""),
+                "keywords": [],
+                "profile_id": (profile.get("id") if isinstance(profile, dict) else "") or "",
+                "role_hints": [role_hint] if role_hint else [],
+                "coverage": 0.0,
+                "missing": [],
+                "matched": [],
+            }
+
+        auto_lang = detect_lang(text)
+        base = _analyze_jd_text(text, lang=auto_lang, profile=profile)
+
+        # If panel provides explicit role_hint, force it first
+        if isinstance(role_hint, str) and role_hint.strip():
+            # keep existing hints, but put selected first
+            rh = [role_hint.strip()]
+            for x in base.get("role_hints", []) or []:
+                xs = str(x).strip()
+                if xs and xs.lower() != rh[0].lower():
+                    rh.append(xs)
+            base["role_hints"] = rh[:12]
+
+        # Add coverage/missing/matched based on current CV
+        base = enrich_with_coverage(cv, base)
+        return base
+
+    # --- Case A: called with JD text string (new style) ---
+    text = ""
+    if isinstance(cv_or_text, str):
+        text = cv_or_text
+    elif isinstance(jd_text, str):
+        text = jd_text
+
+    text = (text or "").strip()
+    if not text:
+        return {
+            "job_id": "",
+            "lang": lang,
+            "keywords": [],
+            "profile_id": (profile.get("id") if isinstance(profile, dict) else "") or "",
+            "role_hints": [role_hint] if role_hint else [],
+            "coverage": 0.0,
+            "missing": [],
+            "matched": [],
+        }
+
+    # use provided lang, but auto-detect if nonsense
+    use_lang = lang if lang in ("en", "ro") else detect_lang(text)
+    base = _analyze_jd_text(text, lang=use_lang, profile=profile)
+
+    # If role_hint given, prioritize it
+    if isinstance(role_hint, str) and role_hint.strip():
+        rh = [role_hint.strip()]
+        for x in base.get("role_hints", []) or []:
+            xs = str(x).strip()
+            if xs and xs.lower() != rh[0].lower():
+                rh.append(xs)
+        base["role_hints"] = rh[:12]
+
+    return base
 
 # ---------------------------
 # Coverage / match vs CV
