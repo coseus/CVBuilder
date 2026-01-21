@@ -1,49 +1,160 @@
 # ats_profiles/domains_index.yaml
-# Used by UI to filter profiles and provide role-hints.
+# Used by UI to filter ATS profiles by domain group (IT / Non-IT).
+# Your profiles.py merges libraries by profile["domain"] (recommended).
+
+version: 1
+
+ui:
+  title:
+    en: Domain Filter
+    ro: Filtru domenii
+  hint:
+    en: Filter profiles by domain (IT / Non-IT). Domains are mapped to libraries/domains/*.yaml
+    ro: Filtrează profilele după domeniu (IT / Non-IT). Domeniile sunt mapate la libraries/domains/*.yaml
 
 groups:
   - id: it
     label:
       en: IT
       ro: IT
-    profiles:
-      - cyber_security
-      - soc_analyst
-      - system_administrator
-      - network_administrator
-      - project_manager
-      - accountant
+    description:
+      en: Cybersecurity, SysAdmin, Network, Cloud, Data, AppSec, etc.
+      ro: Securitate, SysAdmin, Rețea, Cloud, Data, AppSec etc.
+    domains:
+      # --- Root profiles (if you keep them in ats_profiles/*.yaml) ---
+      - id: cyber_security
+        label:
+          en: Cyber Security
+          ro: Securitate cibernetică
+        library: libraries/domains/cyber_security.yaml
+
+      - id: soc_analyst
+        label:
+          en: SOC Analyst
+          ro: Analist SOC
+        library: libraries/domains/cyber_security.yaml
+
+      # --- Libraries/domains ---
+      - id: application_security_appsec
+        label:
+          en: Application Security (AppSec)
+          ro: Securitate aplicații (AppSec)
+        library: libraries/domains/application_security_appsec.yaml
+
+      - id: cloud_security
+        label:
+          en: Cloud Security
+          ro: Securitate Cloud
+        library: libraries/domains/cloud_security.yaml
+
+      - id: dfir_incident_response
+        label:
+          en: DFIR / Incident Response
+          ro: DFIR / Răspuns la incidente
+        library: libraries/domains/dfir_incident_response.yaml
+
+      - id: endpoint_security
+        label:
+          en: Endpoint Security (EDR/XDR)
+          ro: Securitate endpoint (EDR/XDR)
+        library: libraries/domains/endpoint_security.yaml
+
+      - id: grc_compliance
+        label:
+          en: GRC / Compliance
+          ro: GRC / Conformitate
+        library: libraries/domains/grc_compliance.yaml
+
+      - id: network_administrator
+        label:
+          en: Network Administrator
+          ro: Administrator rețea
+        library: libraries/domains/network_administrator.yaml
+
+      - id: system_administrator
+        label:
+          en: System Administrator
+          ro: Administrator sistem
+        library: libraries/domains/system_administrator.yaml
+
+      - id: backup_disaster_recovery
+        label:
+          en: Backup / Disaster Recovery
+          ro: Backup / Disaster Recovery
+        library: libraries/domains/backup_disaster_recovery.yaml
+
+      - id: data_analyst
+        label:
+          en: Data Analyst
+          ro: Analist date
+        library: libraries/domains/data_analyst.yaml
 
   - id: non_it
     label:
       en: Non-IT
       ro: Non-IT
-    profiles:
-      - hr_recruiting
-      - marketing_growth
-      - sales_b2b
-      - customer_support
-      - administrative_assistant
-      - finance_accounting
-      - operations_supply_chain
-      - data_analyst
+    description:
+      en: Admin, Finance, HR, Marketing, Sales, Supply Chain, etc.
+      ro: Administrativ, Financiar, HR, Marketing, Vânzări, Supply Chain etc.
+    domains:
+      # --- Root profiles (if you keep them in ats_profiles/*.yaml) ---
+      - id: accountant
+        label:
+          en: Accounting
+          ro: Contabilitate
+        library: libraries/domains/finance_accounting.yaml
 
-role_hints:
-  it:
-    - security engineer
-    - soc analyst
-    - penetration tester
-    - general cyber security
-    - system administrator
-    - network administrator
-    - devops engineer
-    - cloud engineer
-  non_it:
-    - project manager
-    - hr recruiter
-    - marketing specialist
-    - sales executive
-    - customer support
-    - administrative assistant
-    - accountant
-    - operations coordinator
+      - id: project_manager
+        label:
+          en: Project Manager
+          ro: Manager proiect
+        library: libraries/domains/project_management.yaml
+
+      # --- Libraries/domains ---
+      - id: administrative_assistant
+        label:
+          en: Administrative Assistant
+          ro: Asistent administrativ
+        library: libraries/domains/administrative_assistant.yaml
+
+      - id: customer_support
+        label:
+          en: Customer Support
+          ro: Suport clienți
+        library: libraries/domains/customer_support.yaml
+
+      - id: finance_accounting
+        label:
+          en: Finance & Accounting
+          ro: Financiar & Contabilitate
+        library: libraries/domains/finance_accounting.yaml
+
+      - id: hr_recruiting
+        label:
+          en: HR / Recruiting
+          ro: HR / Recrutare
+        library: libraries/domains/hr_recruiting.yaml
+
+      - id: marketing_growth
+        label:
+          en: Marketing / Growth
+          ro: Marketing / Growth
+        library: libraries/domains/marketing_growth.yaml
+
+      - id: operations_supply_chain
+        label:
+          en: Operations / Supply Chain
+          ro: Operațiuni / Supply Chain
+        library: libraries/domains/operations_supply_chain.yaml
+
+      - id: sales_b2b
+        label:
+          en: Sales (B2B)
+          ro: Vânzări (B2B)
+        library: libraries/domains/sales_b2b.yaml
+
+      - id: project_management
+        label:
+          en: Project Management
+          ro: Management de proiect
+        library: libraries/domains/project_management.yaml
