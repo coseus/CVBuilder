@@ -261,14 +261,21 @@ with tab_modern:
         )
         if cv["include_photo_modern"]:
             render_photo_upload(cv, prefix="modern_")
-
+    
         st.markdown("---")
-
-        # ✅ ONE shared JD input (used by ATS Optimizer + JD Analyzer + Helper)
+    
+        # ✅ ATS Profile selector (YOU WERE MISSING THIS)
+        with st.expander("ATS Profile (select / preview / edit)", expanded=True):
+            selected_profile = render_profile_manager(cv)
+            if isinstance(selected_profile, dict) and selected_profile:
+                profile = selected_profile
+    
+        st.markdown("---")
+    
+        # ✅ ONE shared JD input (used by ATS Optimizer + JD Analyzer + Helper + Dashboard)
         with st.expander("Job Description (shared)", expanded=True):
-            from utils import jd_optimizer
             jd_optimizer.ensure_jd_state(cv)
-
+    
             cv["job_description"] = st.text_area(
                 "Paste Job Description (EN/RO) once — used everywhere below",
                 value=cv.get("job_description", ""),
@@ -276,26 +283,26 @@ with tab_modern:
                 key="job_description_shared",
                 placeholder="Paste aici anunțul de job (EN/RO)...",
             )
-
+    
             # auto update analysis when text changes
             jd_optimizer.auto_update_on_change(cv, profile=profile)
-
+    
             cols_jd = st.columns([1, 1, 1])
             if cols_jd[0].button("Re-analyze now", use_container_width=True, key="jd_shared_reanalyze"):
-                jd_optimizer.analyze_jd(cv, profile=profile)
+                jd_optimizer.analyze_jd(cv, profile=profile, role_hint=cv.get("jd_role_hint", ""))
                 st.success("JD analyzed.")
                 st.rerun()
-
+    
             if cols_jd[1].button("Apply missing → Extra keywords", use_container_width=True, key="jd_shared_apply_missing"):
                 jd_optimizer.apply_missing_to_extra_keywords(cv, limit=25)
                 st.success("Applied into Modern → Extra keywords.")
                 st.rerun()
-
+    
             if cols_jd[2].button("Update rewrite templates", use_container_width=True, key="jd_shared_update_templates"):
                 jd_optimizer.update_rewrite_templates_from_jd(cv, profile=profile)
                 st.success("Updated templates for this job.")
                 st.rerun()
-
+    
         st.markdown("---")
         render_ats_optimizer(cv, profile=profile)
         st.markdown("---")
@@ -304,6 +311,7 @@ with tab_modern:
         render_ats_score_dashboard(cv, profile)
         st.markdown("---")
         render_job_profile_manager(cv)
+
 
 
     st.markdown("---")
