@@ -410,11 +410,29 @@ def load_profile(profile_id: str, lang: str = "en") -> Dict[str, Any]:
 
 
 def list_profiles() -> List[Dict[str, str]]:
+    """
+    Returns list of selectable profiles for UI.
+    Excludes:
+      - ats_profiles/domains_index.yaml
+      - ats_profiles/libraries/**
+    Reads from USER_PROFILES_DIR (seeded).
+    """
     ensure_seeded()
+
+    exclude_names = {"domains_index.yaml", "core_en_ro.yaml"}
     out: List[Dict[str, str]] = []
+
     for fn in sorted(USER_PROFILES_DIR.glob("*.yaml")):
+        if fn.name in exclude_names:
+            continue
+
+        # If user accidentally copied libraries into profiles folder, skip by convention
+        if fn.name.startswith("core_") or fn.name.endswith("_library.yaml"):
+            continue
+
         pid = fn.stem
         title = pid.replace("_", " ").title()
+
         try:
             data = yaml.safe_load(_read_text(fn)) or {}
             if isinstance(data, dict):
@@ -422,7 +440,9 @@ def list_profiles() -> List[Dict[str, str]]:
                 title = str(_pick_lang(t, "en") or title).strip() or title
         except Exception:
             pass
+
         out.append({"id": pid, "filename": fn.name, "title": title})
+
     return out
 
 
