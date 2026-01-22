@@ -1,6 +1,3 @@
-# ats_profiles/domains_index.yaml
-# UI-only index: groups + mapping profiles -> domains + domain library paths
-
 version: 2
 
 ui:
@@ -8,189 +5,125 @@ ui:
     en: Domain Filter
     ro: Filtru domenii
   hint:
-    en: Choose a domain group, then pick an ATS profile (profiles are separate YAML files). Domains map to libraries/domains/*.yaml
-    ro: Alege un grup de domenii, apoi un profil ATS (profilele sunt fișiere YAML separate). Domeniile mapează către libraries/domains/*.yaml
+    en: Filter profiles by group (IT / Non-IT). Profiles are listed from this index (not from folder scan).
+    ro: Filtrează profilele după grup (IT / Non-IT). Profilele sunt listate din acest index (nu prin scanarea folderului).
 
-# Domain libraries (used by profiles.py auto-merge)
 domains:
   - id: cyber_security
-    label:
-      en: Cyber Security
-      ro: Securitate cibernetică
+    label: { en: Cyber Security, ro: Securitate cibernetică }
     library: libraries/domains/cyber_security.yaml
 
-  - id: application_security_appsec
-    label:
-      en: Application Security (AppSec)
-      ro: Securitate aplicații (AppSec)
-    library: libraries/domains/application_security_appsec.yaml
-
-  - id: cloud_security
-    label:
-      en: Cloud Security
-      ro: Securitate Cloud
-    library: libraries/domains/cloud_security.yaml
-
-  - id: dfir_incident_response
-    label:
-      en: DFIR / Incident Response
-      ro: DFIR / Răspuns la incidente
-    library: libraries/domains/dfir_incident_response.yaml
-
-  - id: endpoint_security
-    label:
-      en: Endpoint Security (EDR/XDR)
-      ro: Securitate endpoint (EDR/XDR)
-    library: libraries/domains/endpoint_security.yaml
-
-  - id: grc_compliance
-    label:
-      en: GRC / Compliance
-      ro: GRC / Conformitate
-    library: libraries/domains/grc_compliance.yaml
-
   - id: network_administrator
-    label:
-      en: Network Administrator
-      ro: Administrator rețea
+    label: { en: Network Administrator, ro: Administrator rețea }
     library: libraries/domains/network_administrator.yaml
 
   - id: system_administrator
-    label:
-      en: System Administrator
-      ro: Administrator sistem
+    label: { en: System Administrator, ro: Administrator sistem }
     library: libraries/domains/system_administrator.yaml
 
+  - id: cloud_security
+    label: { en: Cloud Security, ro: Securitate Cloud }
+    library: libraries/domains/cloud_security.yaml
+
+  - id: application_security_appsec
+    label: { en: Application Security (AppSec), ro: Securitate aplicații (AppSec) }
+    library: libraries/domains/application_security_appsec.yaml
+
+  - id: dfir_incident_response
+    label: { en: DFIR / Incident Response, ro: DFIR / Răspuns la incidente }
+    library: libraries/domains/dfir_incident_response.yaml
+
+  - id: endpoint_security
+    label: { en: Endpoint Security (EDR/XDR), ro: Securitate endpoint (EDR/XDR) }
+    library: libraries/domains/endpoint_security.yaml
+
+  - id: grc_compliance
+    label: { en: GRC / Compliance, ro: GRC / Conformitate }
+    library: libraries/domains/grc_compliance.yaml
+
   - id: backup_disaster_recovery
-    label:
-      en: Backup / Disaster Recovery
-      ro: Backup / Disaster Recovery
+    label: { en: Backup / Disaster Recovery, ro: Backup / Disaster Recovery }
     library: libraries/domains/backup_disaster_recovery.yaml
 
   - id: data_analyst
-    label:
-      en: Data Analyst
-      ro: Analist date
+    label: { en: Data Analyst, ro: Analist date }
     library: libraries/domains/data_analyst.yaml
 
   - id: finance_accounting
-    label:
-      en: Finance & Accounting
-      ro: Financiar & Contabilitate
+    label: { en: Finance & Accounting, ro: Financiar & Contabilitate }
     library: libraries/domains/finance_accounting.yaml
 
+  - id: project_management
+    label: { en: Project Management, ro: Management de proiect }
+    library: libraries/domains/project_management.yaml
+
   - id: hr_recruiting
-    label:
-      en: HR / Recruiting
-      ro: HR / Recrutare
+    label: { en: HR / Recruiting, ro: HR / Recrutare }
     library: libraries/domains/hr_recruiting.yaml
 
   - id: marketing_growth
-    label:
-      en: Marketing / Growth
-      ro: Marketing / Growth
+    label: { en: Marketing / Growth, ro: Marketing / Growth }
     library: libraries/domains/marketing_growth.yaml
 
   - id: operations_supply_chain
-    label:
-      en: Operations / Supply Chain
-      ro: Operațiuni / Supply Chain
+    label: { en: Operations / Supply Chain, ro: Operațiuni / Supply Chain }
     library: libraries/domains/operations_supply_chain.yaml
 
   - id: sales_b2b
-    label:
-      en: Sales (B2B)
-      ro: Vânzări (B2B)
+    label: { en: Sales (B2B), ro: Vânzări (B2B) }
     library: libraries/domains/sales_b2b.yaml
 
-  - id: project_management
-    label:
-      en: Project Management
-      ro: Management de proiect
-    library: libraries/domains/project_management.yaml
-
   - id: customer_support
-    label:
-      en: Customer Support
-      ro: Suport clienți
+    label: { en: Customer Support, ro: Suport clienți }
     library: libraries/domains/customer_support.yaml
 
   - id: administrative_assistant
-    label:
-      en: Administrative Assistant
-      ro: Asistent administrativ
+    label: { en: Administrative Assistant, ro: Asistent administrativ }
     library: libraries/domains/administrative_assistant.yaml
 
-# Profiles (real selectable items) -> each maps to a domain library
 profiles:
   # IT
   - id: cyber_security
     domain: cyber_security
-    label:
-      en: Cyber Security / Security Engineer
-      ro: Securitate cibernetică / Security Engineer
+    label: { en: Cyber Security / Security Engineer, ro: Securitate cibernetică / Security Engineer }
 
   - id: soc_analyst
     domain: cyber_security
-    label:
-      en: SOC Analyst
-      ro: Analist SOC
+    label: { en: SOC Analyst, ro: Analist SOC }
 
   - id: system_administrator
     domain: system_administrator
-    label:
-      en: System Administrator
-      ro: Administrator sistem
+    label: { en: System Administrator, ro: Administrator sistem }
 
   - id: network_administrator
     domain: network_administrator
-    label:
-      en: Network Administrator
-      ro: Administrator rețea
+    label: { en: Network Administrator, ro: Administrator rețea }
 
   - id: data_analyst
     domain: data_analyst
-    label:
-      en: Data Analyst
-      ro: Analist date
+    label: { en: Data Analyst, ro: Analist date }
 
   # Non-IT
   - id: accountant
     domain: finance_accounting
-    label:
-      en: Accountant
-      ro: Contabil
+    label: { en: Accountant, ro: Contabil }
 
   - id: project_manager
     domain: project_management
-    label:
-      en: Project Manager
-      ro: Manager proiect
+    label: { en: Project Manager, ro: Manager proiect }
 
-# UI grouping (filter)
 groups:
   - id: it
     label: { en: IT, ro: IT }
-    domains:
+    profiles:
       - cyber_security
-      - application_security_appsec
-      - cloud_security
-      - dfir_incident_response
-      - endpoint_security
-      - grc_compliance
-      - network_administrator
+      - soc_analyst
       - system_administrator
-      - backup_disaster_recovery
+      - network_administrator
       - data_analyst
 
   - id: non_it
     label: { en: Non-IT, ro: Non-IT }
-    domains:
-      - finance_accounting
-      - hr_recruiting
-      - marketing_growth
-      - operations_supply_chain
-      - sales_b2b
-      - project_management
-      - customer_support
-      - administrative_assistant
+    profiles:
+      - accountant
+      - project_manager
