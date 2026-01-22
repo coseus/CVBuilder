@@ -206,6 +206,72 @@ def _seed_from_source(src_root: Path) -> None:
     if (src_root / "libraries").exists():
         copy_tree_if_missing(src_root / "libraries", USER_LIBRARIES_DIR)
 
+def _domains_index_path() -> Path:
+    ensure_seeded()
+    # domains_index.yaml is stored as a profile-like file in root
+    return ATS_ROOT_DIR / "domains_index.yaml"
+
+
+def load_domains_index() -> Dict[str, Any]:
+    """
+    Loads ats_profiles/domains_index.yaml from USER data root.
+    Returns {} if missing/invalid.
+    """
+    p = _domains_index_path()
+    if not p.exists():
+        return {}
+    try:
+        raw = yaml.safe_load(_read_text(p)) or {}
+        return raw if isinstance(raw, dict) else {}
+    except Exception:
+        return {}
+
+
+def index_profile_domain(profile_id: str) -> str:
+    """
+    Looks up profile_id -> domain in domains_index.yaml profiles[].
+    Returns "" if not found.
+    """
+    idx = load_domains_index()
+    profs = idx.get("profiles", [])
+    if not isinstance(profs, list):
+        return ""
+    pid = (profile_id or "").strip()
+    for it in profs:
+        if isinstance(it, dict) and (it.get("id") or "").strip() == pid:
+            return (it.get("domain") or "").strip()
+    return ""
+
+
+def index_profile_label(profile_id: str, lang: str = "en") -> str:
+    """
+    Looks up profile label from domains_index.yaml.
+    """
+    idx = load_domains_index()
+    profs = idx.get("profiles", [])
+    if not isinstance(profs, list):
+        return ""
+    pid = (profile_id or "").strip()
+    for it in profs:
+        if isinstance(it, dict) and (it.get("id") or "").strip() == pid:
+            return str(_pick_lang(it.get("label"), lang=lang) or "").strip()
+    return ""
+
+
+def index_domain_library(domain_id: str) -> str:
+    """
+    Looks up domain_id -> library path in domains_index.yaml domains[].
+    Returns "" if not found.
+    """
+    idx = load_domains_index()
+    doms = idx.get("domains", [])
+    if not isinstance(doms, list):
+        return ""
+    did = (domain_id or "").strip()
+    for it in doms:
+        if isinstance(it, dict) and (it.get("id") or "").strip() == did:
+            return (it.get("library") or "").strip()
+    return ""
 
 def ensure_seeded() -> None:
     _ensure_dirs()
