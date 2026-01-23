@@ -1,94 +1,101 @@
 # components/ats_helper_panel.py
 from __future__ import annotations
 
-from typing import Any, Dict, Optional, List
+from typing import Any, Dict, List
+
 import streamlit as st
 
 from utils import jd_optimizer
+from utils.profiles import load_profile
 
 
 def render_ats_helper_panel(
     cv: Dict[str, Any],
     key_prefix: str = "ats_help",
-    profile: Optional[Dict[str, Any]] = None,
-) -> None:
+    profile: Dict[str, Any] | None = None,
+):
     """
-    ATS Helper: verbs/templates/metrics/keywords + quick actions.
-    Uses shared JD via jd_optimizer.
+    ATS Helper: keywords / metrics / verbs / templates (merged from profile + libraries).
+    Uses ONE shared JD text managed by utils.jd_optimizer (cv["job_description"]).
     """
     jd_optimizer.ensure_jd_state(cv)
-    jd_optimizer.auto_update_on_change(cv, profile=profile)
+
+    # Load profile if not provided
+    if profile is None:
+        pid = cv.get("ats_profile", "cyber_security")
+        lang = cv.get("jd_lang") or "en"
+        try:
+            profile = load_profile(pid, lang=lang)
+        except Exception:
+            profile = {"keywords": {}, "action_verbs": [], "metrics": [], "bullet_templates": []}
 
     st.subheader("ATS Helper (keywords • metrics • verbs • templates)")
-    st.caption("Folosește Job Description-ul shared. Aici vezi resursele din profil + ce a extras analyzer-ul.")
 
-    jd = (cv.get("job_description") or "").strip()
-    if not jd:
-        st.info("Pune Job Description în panoul shared (dreapta) pentru a popula automat keywords/templates.")
-        return
+    # ONE shared JD input
+    jd_text = jd_optimizer.get_current_jd(cv)
+    new_text = st.text_area(
+        "Job Description (paste here) — used for keyword match + offline analyzer",
+        value=jd_text,
+        height=160,
+        key=f"{key_prefix}_jd",
+    )
+    if new_text != jd_text:
+        jd_optimizer.set_current_jd(cv, new_text)
 
-    a = jd_optimizer.get_current_analysis_or_blank(cv)
-    cov = float(a.get("coverage", 0.0) or 0.0) * 100
-    st.markdown(f"**JD coverage (top keywords):** {cov:.1f}%")
+    # ensure analysis up to date
+    jd_optimizer.auto_update_on_change(cv, profile=profile)
+    analysis = jd_optimizer.get_current_analysis(cv)
 
     col1, col2 = st.columns(2, gap="large")
-    with col1:
-        st.markdown("**Missing keywords (top 30)**")
-        missing = (a.get("missing") or [])[:30]
-        st.write(", ".join(missing) if missing else "—")
 
-        if st.button(
-            "Apply missing → Modern: Extra keywords",
-            use_container_width=True,
-            key=f"{key_prefix}__apply_missing",
-        ):
-            jd_optimizer.apply_missing_to_extra_keywords(cv, limit=25)
-            st.success("Applied into Modern → Extra keywords.")
+    with col1:
+        st.markdown("**Coverage**")
+        st.write(f"{analysis.get('coverage', 0):.1f}% keywords found in CV")
+
+        missing = analysis.get("missing", [])[:25]
+        if missing:
+            st.markdown("**Missing keywords (top)**")
+            st.write(", ".join(missing))
+        else:
+            st.success("Nice — no missing keywords detected (top set).")
+
+        if st.button("Auto-apply missing → Modern keywords", key=f"{key_prefix}_apply_kw", use_container_width=True):
+            jd_optimizer.apply_auto_to_modern_skills(cv, analysis, limit=80)
+            st.success("Applied into Modern → Keywords (extra).")
             st.rerun()
 
     with col2:
-        st.markdown("**Active rewrite templates (for this job)**")
-        templates = cv.get("ats_rewrite_templates_active", []) or []
-        if not templates:
-            st.caption("No active templates yet. Use JD Analyzer → Update rewrite templates.")
+        kw = (profile or {}).get("keywords", {}) or {}
+        st.markdown("**Profile keywords (merged libraries)**")
+        for bucket in ["core", "technologies", "tools", "certifications", "frameworks", "soft_skills"]:
+            vals = kw.get(bucket, [])
+            if isinstance(vals, list) and vals:
+                st.caption(bucket.replace("_", " ").title())
+                st.write(", ".join(vals[:30]))
+
+    st.markdown("---")
+
+    verbs = (profile or {}).get("action_verbs", []) or []
+    metrics = (profile or {}).get("metrics", []) or []
+    templates = (profile or {}).get("bullet_templates", []) or []
+
+    c3, c4, c5 = st.columns(3, gap="large")
+    with c3:
+        st.markdown("**Action verbs**")
+        st.write(", ".join(list(verbs)[:50]) if verbs else "—")
+
+    with c4:
+        st.markdown("**Metrics ideas**")
+        if metrics:
+            for m in list(metrics)[:10]:
+                st.write(f"• {m}")
         else:
-            for t in templates[:12]:
-                st.write("• " + str(t))
+            st.write("—")
 
-        if st.button(
-            "Generate templates now (from JD + profile)",
-            use_container_width=True,
-            key=f"{key_prefix}__gen_templates",
-        ):
-            jd_optimizer.update_rewrite_templates_from_jd(cv, profile=profile)
-            st.success("Templates updated.")
-            st.rerun()
-
-    # Optional: show profile resources if provided
-    if isinstance(profile, dict) and profile:
-        st.markdown("---")
-        c3, c4, c5 = st.columns(3, gap="large")
-
-        verbs = profile.get("action_verbs", []) or []
-        metrics = profile.get("metrics", []) or []
-        bullets = profile.get("bullet_templates", []) or []
-
-        with c3:
-            st.markdown("**Action verbs**")
-            st.write(", ".join([str(x) for x in verbs[:50]]) if verbs else "—")
-
-        with c4:
-            st.markdown("**Metrics ideas**")
-            if metrics:
-                for m in metrics[:10]:
-                    st.write("• " + str(m))
-            else:
-                st.write("—")
-
-        with c5:
-            st.markdown("**Bullet templates**")
-            if bullets:
-                for b in bullets[:6]:
-                    st.write("• " + str(b))
-            else:
-                st.write("—")
+    with c5:
+        st.markdown("**Bullet templates**")
+        if templates:
+            for t in list(templates)[:6]:
+                st.write(f"• {t}")
+        else:
+            st.write("—")
