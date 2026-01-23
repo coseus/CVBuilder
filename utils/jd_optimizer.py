@@ -2,385 +2,432 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import re
-from collections import Counter
+from datetime import datetime
 from typing import Any, Dict, List, Optional, Tuple
 
+"""
+CVBuilder — Job Description optimizer (offline)
 
-# -------------------------
-# Stopwords (small, fast, offline)
-# -------------------------
-_STOPWORDS_EN = set("""
-a about above after again against all am an and any are as at be because been before being below between both but by
-can did do does doing down during each few for from further had has have having he her here hers herself him himself his how
-i if in into is it its itself just me more most my myself no nor not of off on once only or other our ours ourselves out over
-own same she should so some such than that the their theirs them themselves then there these they this those through to too
-under until up very was we were what when where which while who whom why with you your yours yourself yourselves
-""".split())
+Goals:
+- ONE shared Job Description text (cv["job_description"]) used by:
+  * ATS Optimizer (keyword match)
+  * Job Description Analyzer (Offline)
+  * ATS Helper Panel
+  * ATS Score Dashboard
 
-_STOPWORDS_RO = set("""
-și si sau ori in în la pe cu din de a al ai ale alea unei unui un una unei care ce că ca pentru prin peste sub sus jos
-este sunt era au avea avem aveam voi tu el ea ei ele noi lor
-""".split())
+- Persist analyses per job (hash) in cv["jd_state"]["jobs"][job_id]
+- Provide stable API used by components (no AttributeError surprises)
+- EN/RO keyword extraction (lightweight, fully offline)
+"""
 
-_TECH_KEEP = set([
-    "c#", "c++", ".net", "node.js", "node", "aws", "azure", "gcp", "m365", "o365",
-    "siem", "soc", "edr", "xdr", "iam", "sso", "mfa", "vpn", "vlan", "ad", "entra",
-    "tcp", "udp", "dns", "dhcp", "http", "https", "ssh", "rdp", "sql", "linux", "windows",
-    "kubernetes", "k8s", "docker", "terraform", "ansible",
-])
+# ---------------------------
+# State management
+# ---------------------------
+
+CANONICAL_JD_KEY = "job_description"   # single source of truth
+LEGACY_JD_KEYS = ("jd_text", "jd", "job_desc")
 
 
-# -------------------------
-# State helpers (public API)
-# -------------------------
-def ensure_jd_state(cv: Dict[str, Any]) -> None:
-    """
-    Shared JD state used by:
-      - app.py "Job Description (shared)"
-      - components/ats_optimizer.py
-      - components/ats_helper_panel.py
-      - components/ats_dashboard.py
-    """
+def ensure_jd_state(cv: dict) -> None:
+    """Ensure JD keys exist in the CV dict (safe across reruns/imports)."""
     if not isinstance(cv, dict):
         return
 
-    cv.setdefault("job_description", "")
-    cv.setdefault("jd_lang", "en")
-    cv.setdefault("jd_role_hint", "")
+    # Canonical JD
+    if CANONICAL_JD_KEY not in cv:
+        # back-compat: try to pull from older keys
+        for k in LEGACY_JD_KEYS:
+            if isinstance(cv.get(k), str) and cv.get(k).strip():
+                cv[CANONICAL_JD_KEY] = cv.get(k, "")
+                break
+        else:
+            cv[CANONICAL_JD_KEY] = ""
 
-    # persistent store per hash
-    cv.setdefault("jd_store", {})         # hash -> analysis dict
-    cv.setdefault("jd_active_hash", "nojd")
+    # Persistent analyzer state
+    st = cv.setdefault("jd_state", {})
+    if not isinstance(st, dict):
+        cv["jd_state"] = {}
+        st = cv["jd_state"]
 
-    # mirrored quick fields used by dashboard/helper
-    cv.setdefault("jd_keywords", [])
-    cv.setdefault("jd_present", [])
-    cv.setdefault("jd_missing", [])
-    cv.setdefault("jd_coverage", 0.0)
-
-    # templates per job (used by ats_rewrite / helper)
-    cv.setdefault("ats_rewrite_templates_active", [])
+    st.setdefault("active_job_id", "")
+    st.setdefault("jobs", {})  # job_id -> analysis dict
+    st.setdefault("last_jd_hash", "")
+    st.setdefault("current_role_hint", "")
+    st.setdefault("last_updated_utc", "")
 
 
-def get_current_jd(cv: Dict[str, Any]) -> str:
+def get_current_jd(cv: dict) -> str:
     ensure_jd_state(cv)
-    return str(cv.get("job_description") or "")
+    return str(cv.get(CANONICAL_JD_KEY) or "")
 
 
-def set_current_jd(cv: Dict[str, Any], text: str) -> None:
+def set_current_jd(cv: dict, jd_text: str) -> None:
     ensure_jd_state(cv)
-    cv["job_description"] = text or ""
+    cv[CANONICAL_JD_KEY] = jd_text or ""
 
 
-def get_current_analysis(cv: Dict[str, Any]) -> Dict[str, Any]:
+def job_hash(jd_text: str) -> str:
+    """Stable hash for a JD (used as job_id)."""
+    s = (jd_text or "").strip().encode("utf-8")
+    return hashlib.sha256(s).hexdigest()[:16]
+
+
+def get_current_analysis(cv: dict) -> Dict[str, Any]:
+    """
+    Returns current analysis (for active job), or a default empty analysis dict.
+    Components rely on keys: coverage, missing, present, keywords, hash, lang.
+    """
     ensure_jd_state(cv)
-    h = str(cv.get("jd_active_hash") or "nojd")
-    store = cv.get("jd_store")
-    if isinstance(store, dict) and h in store:
-        return store[h] or {}
-    # fallback from mirrors
+    st = cv["jd_state"]
+    jid = st.get("active_job_id") or ""
+    jobs = st.get("jobs", {}) if isinstance(st.get("jobs", {}), dict) else {}
+    if jid and jid in jobs and isinstance(jobs[jid], dict):
+        return jobs[jid]
+    # default
     return {
-        "hash": h,
-        "lang": cv.get("jd_lang", "en"),
-        "keywords": cv.get("jd_keywords", []),
-        "present": cv.get("jd_present", []),
-        "missing": cv.get("jd_missing", []),
-        "coverage": float(cv.get("jd_coverage", 0.0) or 0.0),
-        "role_hint": cv.get("jd_role_hint", ""),
+        "hash": "",
+        "lang": "en",
+        "keywords": [],
+        "present": [],
+        "missing": [],
+        "coverage": 0.0,
+        "role_hint": st.get("current_role_hint", "") or "",
+        "created_utc": "",
+        "profile_id": "",
+        "domain": "",
     }
 
 
-def get_current_analysis_or_blank(cv: Dict[str, Any]) -> Dict[str, Any]:
+def get_active_analysis(cv: dict) -> Optional[Dict[str, Any]]:
     a = get_current_analysis(cv)
-    return a if isinstance(a, dict) else {}
+    return a if a.get("hash") else None
 
 
-# -------------------------
-# Core analysis (offline)
-# -------------------------
-def _norm(text: str) -> str:
-    return re.sub(r"\s+", " ", (text or "")).strip().lower()
+# ---------------------------
+# Language + keyword extraction (offline)
+# ---------------------------
+
+_STOP_EN = {
+    "and","or","the","a","an","to","of","in","on","for","with","as","at","by","from","is","are","be","will","you",
+    "we","our","your","this","that","these","those","it","they","their","them","us","who","what","when","where",
+    "job","role","work","team","years","year","experience","skills","skill","responsibilities","responsibility",
+    "requirements","required","preferred","nice","plus",
+}
+_STOP_RO = {
+    "si","și","sau","un","o","unei","ale","al","a","la","in","în","pe","pentru","cu","ca","din","este","sunt","fi",
+    "vei","voi","tu","voi","noi","nostru","noastra","acest","aceasta","aceste","acestia",
+    "job","rol","munca","echipa","ani","an","experienta","experiență","abilitati","abilități","competente","competențe",
+    "responsabilitati","responsabilități","responsabilitate",
+}
+
+# Keep short tech tokens even if length <= 2
+_TECH_HINTS = {
+    "c#", "c++", "go", "aws", "gcp", "azure", "siem", "soar", "edr", "xdr", "vpn", "lan", "wan",
+    "sso", "mfa", "iam", "soc", "dfir", "waf", "ids", "ips", "api", "sql", "ssh", "tls", "ssl",
+}
+
+_RE_WORD = re.compile(r"[a-zA-Z0-9][a-zA-Z0-9\+\#\.\-]{1,}")
 
 
-def detect_language(text: str) -> str:
+def detect_lang(text: str) -> str:
+    """Tiny offline heuristic: returns 'ro' or 'en'."""
     t = (text or "").lower()
-    if not t.strip():
-        return "en"
-    ro_hits = 0
-    en_hits = 0
-    if re.search(r"[ăâîșşțţ]", t):
-        ro_hits += 3
-    ro_hits += len(re.findall(r"\b(și|sau|în|din|pentru|cu|la|pe|care|este|sunt)\b", t))
-    en_hits += len(re.findall(r"\b(and|or|the|with|for|to|is|are|you|we)\b", t))
+    ro_hits = sum(1 for w in [" și ", " să ", "între", "cunoaștere", "responsabilită", "experiență", "competențe"] if w in t)
+    en_hits = sum(1 for w in ["responsibilities", "requirements", "experience", "skills", "ability"] if w in t)
     return "ro" if ro_hits > en_hits else "en"
 
 
-def job_hash(text: str) -> str:
-    b = (text or "").strip().encode("utf-8", errors="ignore")
-    return hashlib.sha256(b).hexdigest()[:12] if b else "nojd"
+def _tokenize(text: str) -> List[str]:
+    return [m.group(0).lower() for m in _RE_WORD.finditer(text or "")]
 
 
-def extract_keywords(text: str, lang: Optional[str] = None, max_keywords: int = 60) -> List[str]:
-    t = _norm(text)
-    if not t:
-        return []
-    if not lang:
-        lang = detect_language(t)
-
-    stop = _STOPWORDS_RO if lang == "ro" else _STOPWORDS_EN
-
-    # keep tech-ish tokens
-    tokens = re.findall(r"[a-z0-9][a-z0-9\+\#\.\-/]{1,}", t)
-
-    cleaned: List[str] = []
-    for tok in tokens:
-        tok = tok.strip(".-/")
-        if not tok:
-            continue
-        if tok in _TECH_KEEP:
-            cleaned.append(tok)
-            continue
-        if len(tok) < 3:
-            continue
-        if tok in stop:
-            continue
-        cleaned.append(tok)
-
-    freq = Counter(cleaned)
-    ranked = [w for w, _ in freq.most_common(max_keywords)]
-    # de-dupe preserve (Counter already)
-    return ranked
+def _ngrams(tokens: List[str], n: int) -> List[str]:
+    if n <= 1:
+        return tokens
+    out: List[str] = []
+    for i in range(0, max(0, len(tokens) - n + 1)):
+        out.append(" ".join(tokens[i:i+n]))
+    return out
 
 
-def build_cv_blob(cv: Dict[str, Any]) -> str:
-    """
-    Text blob for matching keywords: keep it simple and robust to schema changes.
-    """
-    parts: List[str] = []
-    parts.append(str(cv.get("pozitie_vizata", "") or ""))
-    parts.append(str(cv.get("rezumat", "") or ""))
-
-    # skills fields used by your exporters
-    parts.append(str(cv.get("modern_skills_headline", "") or ""))
-    parts.append(str(cv.get("modern_tools", "") or ""))
-    parts.append(str(cv.get("modern_certs", "") or ""))
-    parts.append(str(cv.get("modern_keywords_extra", "") or ""))
-
-    # experience
-    for e in (cv.get("experienta") or []):
-        if not isinstance(e, dict):
-            continue
-        parts.append(str(e.get("functie", "") or ""))
-        parts.append(str(e.get("angajator", "") or ""))
-        parts.append(str(e.get("tehnologii", "") or ""))
-        parts.append(str(e.get("activitati", "") or ""))
-
-    # education (handle both schemas)
-    for ed in (cv.get("educatie") or []):
-        if not isinstance(ed, dict):
-            continue
-        parts.append(str(ed.get("titlu", "") or ed.get("calificare", "") or ""))
-        parts.append(str(ed.get("organizatie", "") or ed.get("institutie", "") or ""))
-
-    return "\n".join([p for p in parts if p])
-
-
-def compute_coverage(cv_text: str, jd_keywords: List[str]) -> Tuple[float, List[str], List[str]]:
-    hay = _norm(cv_text)
-    present: List[str] = []
-    missing: List[str] = []
-    for kw in jd_keywords:
-        k = _norm(kw)
-        if not k:
-            continue
-        if k in hay:
-            present.append(k)
-        else:
-            missing.append(k)
-    cov = len(present) / max(1, len(present) + len(missing))
-    return float(cov), present, missing
-
-
-def persist_analysis(cv: Dict[str, Any], h: str, analysis: Dict[str, Any]) -> None:
-    ensure_jd_state(cv)
-    store = cv.get("jd_store")
-    if not isinstance(store, dict):
-        cv["jd_store"] = {}
-        store = cv["jd_store"]
-    store[h] = analysis
-
-
-def analyze_jd(
-    cv: Dict[str, Any],
-    profile: Optional[Dict[str, Any]] = None,
-    role_hint: str = "",
-) -> Dict[str, Any]:
-    """
-    Analyze current JD from cv['job_description'], persist per hash,
-    and mirror key fields on cv for quick UI.
-
-    NOTE: this signature matches components/ats_optimizer.py.
-    """
-    ensure_jd_state(cv)
-
-    jd = str(cv.get("job_description") or "").strip()
-    lang = detect_language(jd)
-    h = job_hash(jd)
-
-    # store role hint
-    if role_hint is not None:
-        cv["jd_role_hint"] = (role_hint or "").strip()
-
-    cv["jd_lang"] = lang
-    cv["jd_active_hash"] = h
-
-    if not jd:
-        analysis = {
-            "hash": "nojd",
-            "lang": lang,
-            "keywords": [],
-            "present": [],
-            "missing": [],
-            "coverage": 0.0,
-            "role_hint": cv.get("jd_role_hint", ""),
-            "profile_id": (profile or {}).get("id", "") if isinstance(profile, dict) else "",
-        }
-        persist_analysis(cv, "nojd", analysis)
-        cv["jd_keywords"] = []
-        cv["jd_present"] = []
-        cv["jd_missing"] = []
-        cv["jd_coverage"] = 0.0
-        return analysis
-
-    keywords = extract_keywords(jd, lang=lang, max_keywords=60)
-    cv_blob = build_cv_blob(cv)
-    coverage, present, missing = compute_coverage(cv_blob, keywords[:45])
-
-    analysis = {
-        "hash": h,
-        "lang": lang,
-        "keywords": keywords,
-        "present": present,
-        "missing": missing,
-        "coverage": coverage,
-        "role_hint": cv.get("jd_role_hint", ""),
-        "profile_id": (profile or {}).get("id", "") if isinstance(profile, dict) else "",
-    }
-
-    persist_analysis(cv, h, analysis)
-
-    # mirror
-    cv["jd_keywords"] = keywords
-    cv["jd_present"] = present
-    cv["jd_missing"] = missing
-    cv["jd_coverage"] = float(coverage)
-
-    return analysis
-
-
-def auto_update_on_change(cv: Dict[str, Any], profile: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
-    """
-    Re-analyze if JD hash changed.
-    """
-    ensure_jd_state(cv)
-    jd = str(cv.get("job_description") or "").strip()
-    h = job_hash(jd)
-    if cv.get("jd_active_hash") != h:
-        return analyze_jd(cv, profile=profile, role_hint=cv.get("jd_role_hint", ""))
-    # hydrate from store if mirrors cleared
-    store = cv.get("jd_store")
-    if isinstance(store, dict) and h in store:
-        a = store[h] or {}
-        if not cv.get("jd_keywords"):
-            cv["jd_keywords"] = a.get("keywords", [])
-            cv["jd_present"] = a.get("present", [])
-            cv["jd_missing"] = a.get("missing", [])
-            cv["jd_coverage"] = float(a.get("coverage", 0.0) or 0.0)
-            cv["jd_lang"] = a.get("lang", cv.get("jd_lang", "en"))
-        return a
-    return analyze_jd(cv, profile=profile, role_hint=cv.get("jd_role_hint", ""))
-
-
-# -------------------------
-# Apply helpers used by UI buttons
-# -------------------------
-def apply_missing_to_extra_keywords(cv: Dict[str, Any], limit: int = 25) -> None:
-    ensure_jd_state(cv)
-    missing = cv.get("jd_missing", []) or []
-    if not missing:
-        return
-    existing = (cv.get("modern_keywords_extra") or "").strip()
-    add = ", ".join([m for m in missing[:limit] if str(m).strip()])
-    cv["modern_keywords_extra"] = (existing + (", " if existing and add else "") + add).strip()
-
-
-# Back-compat name used by some components
-def apply_auto_to_modern_skills(cv: Dict[str, Any], analysis: Optional[Dict[str, Any]] = None, limit: int = 25) -> None:
-    """
-    Alias: applies missing keywords into modern_keywords_extra.
-    """
-    ensure_jd_state(cv)
-    if analysis and isinstance(analysis, dict):
-        missing = analysis.get("missing", []) or []
-        if missing:
-            existing = (cv.get("modern_keywords_extra") or "").strip()
-            add = ", ".join([m for m in missing[:limit] if str(m).strip()])
-            cv["modern_keywords_extra"] = (existing + (", " if existing and add else "") + add).strip()
-            return
-    apply_missing_to_extra_keywords(cv, limit=limit)
-
-
-def update_rewrite_templates_from_jd(cv: Dict[str, Any], profile: Optional[Dict[str, Any]] = None) -> List[str]:
-    """
-    Build a template list:
-      - profile bullet_templates first
-      - then a few JD-aware templates (RO/EN)
-    Saves in cv['ats_rewrite_templates_active'].
-    """
-    ensure_jd_state(cv)
-
-    base: List[str] = []
-    if isinstance(profile, dict):
-        bt = profile.get("bullet_templates", [])
-        if isinstance(bt, list):
-            base.extend([str(x) for x in bt if str(x).strip()])
-
-    lang = (cv.get("jd_lang") or "en").lower()
-    role = (cv.get("jd_role_hint") or "").strip().lower()
-
-    if lang == "ro":
-        jd_templates = [
-            "Am implementat {control_or_feature} în {environment}; am îmbunătățit {metric} cu {value}.",
-            "Am automatizat {process} folosind {tool_or_tech}; am redus efortul manual cu {value}.",
-            "Am investigat și remediat {issue}; am redus {metric} cu {value}.",
-        ]
-        if "soc" in role:
-            jd_templates.insert(0, "Am triat alerte în {siem}; am investigat incidente și am escaladat conform playbook-urilor.")
-        if "penetration" in role or "pentest" in role:
-            jd_templates.insert(0, "Am identificat vulnerabilități și am validat impactul; am documentat findings și recomandări de remediere.")
-    else:
-        jd_templates = [
-            "Implemented {control_or_feature} across {environment}; improved {metric} by {value}.",
-            "Automated {process} using {tool_or_tech}; reduced manual effort by {value}.",
-            "Diagnosed and remediated {issue}; reduced {metric} by {value}.",
-        ]
-        if "soc" in role:
-            jd_templates.insert(0, "Triaged alerts in {siem}; investigated incidents and escalated per playbooks/runbooks.")
-        if "penetration" in role or "pentest" in role:
-            jd_templates.insert(0, "Identified and validated vulnerabilities; documented findings and remediation guidance.")
-
-    merged: List[str] = []
+def _dedupe_keep_order(items: List[str]) -> List[str]:
     seen = set()
-    for t in base + jd_templates:
-        s = str(t).strip()
+    out: List[str] = []
+    for it in items:
+        s = (it or "").strip()
         if not s:
             continue
-        key = s.lower()
-        if key in seen:
+        k = s.lower()
+        if k in seen:
             continue
-        seen.add(key)
-        merged.append(s)
+        seen.add(k)
+        out.append(s)
+    return out
 
-    cv["ats_rewrite_templates_active"] = merged[:25]
-    return cv["ats_rewrite_templates_active"]
+
+def extract_keywords(text: str, lang: str = "en", max_keywords: int = 70) -> List[str]:
+    """
+    Offline keyword extraction:
+    - keep single tokens + 2/3-grams
+    - frequency-based ranking
+    - basic stopword filtering
+    """
+    tokens = _tokenize(text)
+    stop = _STOP_RO if lang == "ro" else _STOP_EN
+
+    singles: List[str] = []
+    for t in tokens:
+        if t in stop:
+            continue
+        if len(t) <= 2 and t not in _TECH_HINTS:
+            continue
+        if re.fullmatch(r"\d+", t):
+            continue
+        singles.append(t)
+
+    bigrams = [g for g in _ngrams(tokens, 2) if not any(w in stop for w in g.split())]
+    trigrams = [g for g in _ngrams(tokens, 3) if not any(w in stop for w in g.split())]
+
+    # score by frequency + prefer longer phrases for ties
+    freq: Dict[str, int] = {}
+    for cand in singles + bigrams + trigrams:
+        freq[cand] = freq.get(cand, 0) + 1
+
+    ranked = sorted(freq.items(), key=lambda kv: (kv[1], len(kv[0])), reverse=True)
+    kws = [k for k, _ in ranked]
+
+    cleaned: List[str] = []
+    for k in kws:
+        if len(k) > 44:
+            continue
+        if k.count(" ") >= 4:
+            continue
+        cleaned.append(k)
+
+    return _dedupe_keep_order(cleaned)[:max_keywords]
+
+
+# ---------------------------
+# CV text for matching (ATS)
+# ---------------------------
+
+def _cv_text_for_matching(cv: dict) -> str:
+    """Build a plain text representation of CV for keyword matching (ATS-friendly)."""
+    parts: List[str] = []
+    for k in ("nume_prenume","pozitie_vizata","rezumat","modern_skills_headline","modern_tools","modern_certs","modern_keywords_extra"):
+        v = cv.get(k)
+        if isinstance(v, str) and v.strip():
+            parts.append(v)
+
+    bullets = cv.get("rezumat_bullets", [])
+    if isinstance(bullets, list):
+        for b in bullets:
+            s = str(b).strip()
+            if s:
+                parts.append(s)
+
+    exp = cv.get("experienta", [])
+    if isinstance(exp, list):
+        for e in exp:
+            if not isinstance(e, dict):
+                continue
+            for kk in ("functie","angajator","titlu","perioada","tehnologii","activitati"):
+                v = e.get(kk)
+                if isinstance(v, str) and v.strip():
+                    parts.append(v)
+
+    edu = cv.get("educatie", [])
+    if isinstance(edu, list):
+        for e in edu:
+            if not isinstance(e, dict):
+                continue
+            for kk in ("titlu","organizatie","perioada","descriere","calificare","institutie"):
+                v = e.get(kk)
+                if isinstance(v, str) and v.strip():
+                    parts.append(v)
+
+    return "\n".join(parts).lower()
+
+
+def _keyword_present(keyword: str, cv_text: str) -> bool:
+    k = (keyword or "").strip().lower()
+    if not k:
+        return False
+    # exact phrase match for multi-word; word-boundary for single tokens (best effort)
+    if " " in k:
+        return k in cv_text
+    return re.search(rf"\b{re.escape(k)}\b", cv_text) is not None
+
+
+# ---------------------------
+# Main analysis API (used by components)
+# ---------------------------
+
+def analyze_jd(
+    cv_or_text: Any,
+    role_hint: str = "",
+    profile: Optional[dict] = None,
+) -> Dict[str, Any]:
+    """
+    Backward-compatible entrypoint.
+
+    Supported calls:
+      - analyze_jd(cv, role_hint="...", profile=profile)   # used by Streamlit components
+      - analyze_jd(jd_text="...", lang="en", profile=...)  # internal (not used by UI)
+
+    Returns analysis dict (also persisted into cv["jd_state"] if cv passed).
+    """
+    if isinstance(cv_or_text, dict):
+        cv = cv_or_text
+        ensure_jd_state(cv)
+        jd = get_current_jd(cv).strip()
+        if not jd:
+            # persist empty analysis
+            st = cv["jd_state"]
+            st["active_job_id"] = ""
+            st["last_jd_hash"] = ""
+            return get_current_analysis(cv)
+
+        lang = detect_lang(jd)
+        jid = job_hash(jd)
+        st = cv["jd_state"]
+        st["current_role_hint"] = role_hint or st.get("current_role_hint", "") or ""
+        analysis = _analyze(jd, lang=lang, cv=cv, role_hint=st["current_role_hint"], profile=profile)
+        st["jobs"][jid] = analysis
+        st["active_job_id"] = jid
+        st["last_jd_hash"] = jid
+        st["last_updated_utc"] = datetime.utcnow().isoformat(timespec="seconds") + "Z"
+        return analysis
+
+    # text mode (rare)
+    jd = str(cv_or_text or "").strip()
+    lang = detect_lang(jd)
+    return _analyze(jd, lang=lang, cv=None, role_hint=role_hint, profile=profile)
+
+
+def _analyze(jd_text: str, lang: str, cv: Optional[dict], role_hint: str, profile: Optional[dict]) -> Dict[str, Any]:
+    kws = extract_keywords(jd_text, lang=lang, max_keywords=80)
+
+    cv_text = _cv_text_for_matching(cv or {})
+    present = [k for k in kws if _keyword_present(k, cv_text)]
+    missing = [k for k in kws if k not in present]
+
+    coverage = 0.0
+    if kws:
+        coverage = (len(present) / max(1, len(kws))) * 100.0
+
+    prof_id = (profile.get("id") if isinstance(profile, dict) else "") or ""
+    domain = (profile.get("domain") if isinstance(profile, dict) else "") or ""
+
+    return {
+        "hash": job_hash(jd_text),
+        "lang": lang,
+        "role_hint": role_hint or "",
+        "profile_id": prof_id,
+        "domain": domain,
+        "keywords": kws,
+        "present": present,
+        "missing": missing,
+        "coverage": float(round(coverage, 2)),
+        "created_utc": datetime.utcnow().isoformat(timespec="seconds") + "Z",
+    }
+
+
+def auto_update_on_change(cv: dict, profile: Optional[dict] = None) -> None:
+    """
+    Call this on rerun. Re-analyzes only when JD text changed (hash differs).
+    """
+    ensure_jd_state(cv)
+    jd = get_current_jd(cv).strip()
+    if not jd:
+        return
+
+    jid = job_hash(jd)
+    st = cv["jd_state"]
+    if st.get("last_jd_hash") == jid and jid in (st.get("jobs") or {}):
+        # already analyzed this exact JD in this session state
+        st["active_job_id"] = jid
+        return
+
+    analyze_jd(cv, role_hint=st.get("current_role_hint", "") or "", profile=profile)
+
+
+# ---------------------------
+# Auto-apply helpers (used by UI buttons)
+# ---------------------------
+
+def apply_auto_to_modern_skills(cv: dict, analysis: Dict[str, Any], limit: int = 35) -> None:
+    """
+    Append missing keywords into cv["modern_keywords_extra"] (newline separated).
+    """
+    if not isinstance(cv, dict) or not isinstance(analysis, dict):
+        return
+
+    missing = analysis.get("missing", [])
+    if not isinstance(missing, list) or not missing:
+        return
+
+    existing = (cv.get("modern_keywords_extra") or "").strip()
+    existing_list = [x.strip() for x in existing.splitlines() if x.strip()]
+
+    add = [str(x).strip() for x in missing if str(x).strip()]
+    merged = _dedupe_keep_order(existing_list + add)
+    cv["modern_keywords_extra"] = "\n".join(merged[: max(1, int(limit))])
+
+
+def apply_missing_to_extra_keywords(cv: dict, limit: int = 25) -> None:
+    """
+    Convenience wrapper: apply current analysis missing keywords.
+    """
+    analysis = get_current_analysis(cv)
+    apply_auto_to_modern_skills(cv, analysis, limit=limit)
+
+
+def update_rewrite_templates_from_jd(cv: dict, profile: Optional[dict] = None, limit: int = 12) -> None:
+    """
+    Optional: generate job-specific rewrite templates from JD keywords.
+    Stores into cv["jd_state"]["jobs"][job_id]["rewrite_templates"] and cv["rewrite_templates"] (if you want).
+    """
+    ensure_jd_state(cv)
+    analysis = get_active_analysis(cv)
+    if not analysis:
+        return
+
+    kws = analysis.get("keywords", [])
+    if not isinstance(kws, list):
+        kws = []
+
+    # pick a handful of meaningful phrases (prefer 2-3 grams)
+    picked = [k for k in kws if " " in k][: max(3, min(10, len(kws)))]
+    if len(picked) < 4:
+        picked += [k for k in kws if " " not in k][:4]
+
+    templates: List[str] = []
+    for k in picked[:limit]:
+        templates.append(f"Implemented {k} across {{environment}}; improved {{metric}} by {{value}}.")
+    templates = _dedupe_keep_order(templates)[:limit]
+
+    analysis["rewrite_templates"] = templates
+    # optional: also expose at root CV (some components use rewrite_templates)
+    cv["rewrite_templates"] = templates
+
+
+# ---------------------------
+# Import / Export helpers (optional)
+# ---------------------------
+
+def export_jd_state(cv: dict) -> str:
+    ensure_jd_state(cv)
+    return json.dumps(cv.get("jd_state", {}), ensure_ascii=False, indent=2)
+
+
+def import_jd_state(cv: dict, jd_state_json: str) -> None:
+    ensure_jd_state(cv)
+    try:
+        obj = json.loads(jd_state_json or "{}")
+        if isinstance(obj, dict):
+            cv["jd_state"] = obj
+    except Exception:
+        pass
