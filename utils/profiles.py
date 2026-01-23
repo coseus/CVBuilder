@@ -317,20 +317,34 @@ def load_domains_index() -> Dict[str, Any]:
     return {}
 
 
-def flatten_domains_index(*, lang: str = "en") -> Dict[str, Any]:
-    """Return a normalized domains index (Schema A).
-
-    If `domains_index.yaml` is already Schema A, returns it.
-    If it's Schema B (groups -> domains), converts it so the UI can:
-      - Filter profiles by group
-      - Display EN/RO labels
-      - Map `profile_id` -> `domain_id` (domain libraries auto-merge)
-
-    Domain id is inferred from the `library` path stem when provided.
-    Example: libraries/domains/finance_accounting.yaml -> domain 'finance_accounting'
+def flatten_domains_index(idx: Optional[Dict[str, Any]] = None, *, lang: str = "en") -> Dict[str, Any]:
     """
-    raw = load_domains_index() or {}
+    Return a normalized domains index (Schema A).
 
+    Accepts:
+      - flatten_domains_index() -> loads domains_index.yaml internally
+      - flatten_domains_index(idx) -> uses provided dict (backward-compatible with existing UI)
+
+    Output schema (Schema A):
+      {
+        "profiles": [{"id":..., "label":..., "domain":...}, ...],
+        "groups":   [{"id":..., "label":..., "profiles":[profile_ids...]}, ...],
+        "domains":  [{"id": domain_id, "library": "libraries/domains/<domain>.yaml"}, ...]
+      }
+
+    Supports input schemas:
+
+    **Schema A (already flat)**
+      profiles: [...]
+      groups: [...]
+      domains: [...]
+
+    **Schema B (nested)**
+      groups: [{id,label,domains:[{id,label,library}]}]
+    """
+    raw = idx if isinstance(idx, dict) else (load_domains_index() or {})
+
+    # Already Schema A
     if isinstance(raw.get("profiles"), list) and isinstance(raw.get("groups"), list):
         return raw
 
@@ -345,6 +359,7 @@ def flatten_domains_index(*, lang: str = "en") -> Dict[str, Any]:
     for g in groups_in:
         if not isinstance(g, dict):
             continue
+
         gid = str(g.get("id") or "").strip() or "group"
         glabel = g.get("label") or {}
         gdomains = g.get("domains") or []
@@ -356,6 +371,7 @@ def flatten_domains_index(*, lang: str = "en") -> Dict[str, Any]:
         for d in gdomains:
             if not isinstance(d, dict):
                 continue
+
             pid = str(d.get("id") or "").strip()
             if not pid:
                 continue
@@ -385,6 +401,7 @@ def flatten_domains_index(*, lang: str = "en") -> Dict[str, Any]:
 
     domains = [{"id": did, "library": lpath} for did, lpath in sorted(domains_map.items())]
 
+    # Dedup profiles by id
     seen = set()
     prof_out = []
     for p in profiles:
@@ -394,7 +411,6 @@ def flatten_domains_index(*, lang: str = "en") -> Dict[str, Any]:
         prof_out.append(p)
 
     return {"profiles": prof_out, "groups": groups, "domains": domains}
-
 
 def _domain_library_path(domain_id: str) -> Path:
     """Resolve domain library path.
