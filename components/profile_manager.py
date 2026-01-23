@@ -1,4 +1,3 @@
-# components/profile_manager.py
 from __future__ import annotations
 
 from typing import Any, Dict, List, Optional
@@ -8,130 +7,127 @@ import streamlit as st
 from utils.profiles import (
     ProfileError,
     load_profile,
+    list_profiles,
     load_domains_index,
-    index_profile_label,
+    flatten_domains_index,
 )
 
 
-def _pick_lang_from_ui() -> str:
-    # prefer JD detected language if present, else EN
-    # you can change to cv.get("lang") if you store it
-    return st.session_state.get("export_lang", "en")
+def _pick_lang(val: Any, lang: str = "en") -> str:
+    if isinstance(val, dict):
+        if lang in val and val.get(lang):
+            return str(val.get(lang))
+        if "en" in val and val.get("en"):
+            return str(val.get("en"))
+        if "ro" in val and val.get("ro"):
+            return str(val.get("ro"))
+        for _, v in val.items():
+            if v:
+                return str(v)
+    return str(val or "")
 
 
-def render_profile_manager(cv: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+def render_profile_manager(cv: Dict[str, Any], lang: str = "en") -> Optional[Dict[str, Any]]:
     """
-    Profile selector driven ONLY by domains_index.yaml (best practice).
-    Saves selection into cv["ats_profile"].
-    Returns loaded profile dict (merged libraries + normalized) or None.
+    UI: Select / preview / edit ATS profile.
+    - Reads available profiles from utils.profiles.list_profiles()
+    - Uses domains_index.yaml (grouped or flat) to offer an "IT / Non-IT" filter if present.
+    - Updates cv["ats_profile"] with selected id.
+    - Returns loaded (merged) profile dict.
     """
-    lang = cv.get("jd_lang") or _pick_lang_from_ui() or "en"
+    if not isinstance(cv, dict):
+        return None
+
+    # Ensure default
+    cv.setdefault("ats_profile", "cyber_security")
+
     idx = load_domains_index()
+    domains = flatten_domains_index(idx)
 
-    # Fallback: if index missing, keep current behavior minimal
-    profiles_index = idx.get("profiles", [])
-    groups_index = idx.get("groups", [])
+    # Build groups (optional)
+    groups: List[Dict[str, Any]] = []
+    if isinstance(idx.get("groups"), list):
+        for g in idx.get("groups") or []:
+            if isinstance(g, dict) and g.get("id"):
+                groups.append(g)
 
-    if not isinstance(profiles_index, list) or not profiles_index:
-        st.warning("domains_index.yaml not found or empty. Please ensure ats_profiles/domains_index.yaml exists.")
-        pid = cv.get("ats_profile", "cyber_security")
-        try:
-            p = load_profile(pid, lang=lang)
-            return p
-        except Exception:
-            return None
+    # Domain filter UI
+    domain_filter_id = cv.get("ats_domain_filter", "all")
+    if groups:
+        group_labels = {"all": "All"}
+        for g in groups:
+            gid = str(g.get("id"))
+            group_labels[gid] = _pick_lang(g.get("label"), lang=lang) or gid
 
-    # Build group options
-    group_options = [("all", "All / Toate")]
-    if isinstance(groups_index, list):
-        for g in groups_index:
-            if not isinstance(g, dict):
-                continue
-            gid = (g.get("id") or "").strip()
-            glabel = g.get("label")
-            name = (glabel.get(lang) if isinstance(glabel, dict) else None) or gid
-            if gid:
-                group_options.append((gid, str(name)))
+        domain_filter_id = st.selectbox(
+            "Domain filter",
+            options=list(group_labels.keys()),
+            format_func=lambda k: group_labels.get(k, k),
+            index=list(group_labels.keys()).index(domain_filter_id) if domain_filter_id in group_labels else 0,
+            key="ats_domain_filter",
+            help="Filters the profile list (IT / Non-IT etc.) if domains_index.yaml provides groups.",
+        )
+        cv["ats_domain_filter"] = domain_filter_id
 
-    # UI controls
-    colA, colB = st.columns([1, 1], gap="small")
-    with colA:
-        group_id = st.selectbox(
-            "Domain group",
-            options=group_options,
-            format_func=lambda x: x[1],
-            key="ui_domain_group",
-        )[0]
-    with colB:
-        q = st.text_input("Search profile", value="", key="ui_profile_search", placeholder="e.g. SOC, Accountant...").strip().lower()
-
-    # Determine allowed profile ids by group
+    # Build allowed ids if filtered
     allowed_ids = None
-    if group_id != "all" and isinstance(groups_index, list):
-        for g in groups_index:
-            if isinstance(g, dict) and (g.get("id") or "").strip() == group_id:
-                ids = g.get("profiles", [])
-                if isinstance(ids, list):
-                    allowed_ids = set([str(x).strip() for x in ids if str(x).strip()])
-                break
+    if groups and domain_filter_id != "all":
+        allowed_ids = set()
+        for d in domains:
+            if d.get("group_id") == domain_filter_id:
+                allowed_ids.add(d.get("id"))
 
-    # Build selectable profiles list
-    options: List[Dict[str, str]] = []
-    for it in profiles_index:
-        if not isinstance(it, dict):
-            continue
-        pid = (it.get("id") or "").strip()
-        if not pid:
-            continue
-        if allowed_ids is not None and pid not in allowed_ids:
-            continue
+    # List profiles (titles are already localized/friendly)
+    profiles_list = list_profiles(lang=lang)
+    if allowed_ids is not None:
+        profiles_list = [p for p in profiles_list if p.get("id") in allowed_ids]
 
-        label = it.get("label")
-        title = (label.get(lang) if isinstance(label, dict) else None) or index_profile_label(pid, lang=lang) or pid.replace("_", " ").title()
+    if not profiles_list:
+        st.warning("No profiles found for this filter. Check ats_profiles/ seeding or domains_index.yaml.")
+        return None
 
-        # Search filter
-        hay = f"{pid} {title}".lower()
-        if q and q not in hay:
-            continue
-
-        options.append({"id": pid, "title": title})
+    id_to_title = {p["id"]: p["title"] for p in profiles_list}
 
     # Keep selection stable
-    current = (cv.get("ats_profile") or "").strip() or "cyber_security"
-    ids = [o["id"] for o in options]
-    if current not in ids and ids:
-        current = ids[0]
-        cv["ats_profile"] = current
+    if cv.get("ats_profile") not in id_to_title:
+        cv["ats_profile"] = profiles_list[0]["id"]
 
-    def _fmt(pid: str) -> str:
-        # show "Title (id)"
-        title = next((o["title"] for o in options if o["id"] == pid), pid.replace("_", " ").title())
-        return f"{title} ({pid})"
-
-    selected = st.selectbox(
-        "ATS Profile",
-        options=ids,
-        index=ids.index(current) if current in ids else 0,
-        format_func=_fmt,
+    selected_id = st.selectbox(
+        "Select profile",
+        options=[p["id"] for p in profiles_list],
+        format_func=lambda pid: f"{id_to_title.get(pid, pid)} ({pid})",
+        index=[p["id"] for p in profiles_list].index(cv["ats_profile"]),
         key="ats_profile_select",
     )
+    if selected_id != cv.get("ats_profile"):
+        cv["ats_profile"] = selected_id
+        # Clear cached analysis so UI updates immediately
+        cv.pop("ats_analysis", None)
+        cv.pop("ats_score", None)
+        st.rerun()
 
-    if selected != cv.get("ats_profile"):
-        cv["ats_profile"] = selected
-
-    # Load profile
+    # Load profile merged with libraries
     try:
         prof = load_profile(cv["ats_profile"], lang=lang)
-        # Optional: show warnings
-        warns = prof.get("_warnings", [])
-        if isinstance(warns, list) and warns:
-            with st.expander("Profile warnings", expanded=False):
-                for w in warns:
-                    st.caption(f"• {w}")
-        return prof
     except ProfileError as e:
         st.error(str(e))
-    except Exception as e:
-        st.error(f"Failed to load profile: {e}")
+        return None
 
-    return None
+    # Preview + warnings
+    warnings = prof.get("_warnings") or []
+    if warnings:
+        st.warning(" • ".join([str(w) for w in warnings][:5]))
+
+    with st.expander("Profile preview (merged)", expanded=False):
+        st.write({"id": prof.get("id"), "domain": prof.get("domain"), "title": _pick_lang(prof.get("title"), lang)})
+        st.caption("Keywords (top):")
+        kw = prof.get("keywords") or {}
+        if isinstance(kw, dict):
+            top = []
+            for bucket in ["core", "technologies", "tools", "certifications", "frameworks", "soft_skills"]:
+                vals = kw.get(bucket) or []
+                if isinstance(vals, list):
+                    top.extend(vals[:8])
+            st.write(", ".join(top[:40]) if top else "—")
+
+    return prof
