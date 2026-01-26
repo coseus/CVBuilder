@@ -5,3 +5,5 @@ Pillow>=10.0.0
 dataclasses;python_version<"3.7"
 PyYAML>=6.0.0
 pdfplumber
+pyyaml
+rich
