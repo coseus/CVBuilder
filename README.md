@@ -1,230 +1,211 @@
-# CV Builder – Modern (ATS-Friendly) & Europass
+# README CV Builder nou
 
-🚀 **CV Builder** is a Streamlit-based web application that helps you **create, optimize, import, and export CVs** in two professional formats:
+# CVBuilder
 
-- **Modern (ATS-Friendly)** – optimized for Applicant Tracking Systems and recruiters
-- **Europass (Complete)** – compliant with the official Europass structure
+**CVBuilder** is an **offline-first, ATS-optimized CV builder** that lets you create, analyze, and tailor resumes for specific job descriptions — without relying on external APIs or cloud AI services.
 
-The app supports **PDF & DOCX autofill**, **offline ATS optimization**, **job-specific keyword matching**, and export to **PDF, Word, TXT, and JSON**.
+It supports **Modern ATS-friendly CVs** and **Europass format**, includes **job description analysis**, **keyword matching**, **profile/domain libraries**, and **automatic CV optimization per job**.
 
 ---
 
-## ✨ Key Features
+## 🚀 Key Features
 
-### 🧩 CV Editing
+### ✅ Modern ATS-Friendly CV Builder
 
-- Full CRUD support (Add / Edit / Delete) for:
-    - Personal Information
-    - Professional Summary (bullet-based, ATS-friendly)
-    - Professional Experience / Projects
-    - Education
-    - Skills (structured for ATS)
-    - Languages
-    - Europass personal competencies
-- **Short profile line under name**
+- Clean, recruiter-optimized layout
+- Strong ATS parsing compatibility
+- Keyword-dense but human-readable structure
+- Optional photo support (disabled by default for ATS)
+
+### ✅ Europass CV (Full Editor)
+
+- Complete Europass-compatible structure
+- All official fields supported
+- PDF & DOCX export
+
+### ✅ Offline Job Description Analyzer
+
+- Paste a Job Description once (EN / RO)
+- Automatic language detection
+- Keyword extraction & ranking
+- Coverage score (how well your CV matches the job)
+- Persistent analysis per job (hash-based)
+
+### ✅ ATS Optimizer
+
+- Shows **present vs missing keywords**
+- One-click auto-apply of missing keywords into CV
+- Keeps CV ATS-safe (no keyword stuffing)
+
+### ✅ ATS Helper Panel
+
+- Action verbs
+- Metrics ideas
+- Bullet templates
+- Keywords (merged from libraries + profile)
+- All localized EN / RO
+
+### ✅ ATS Profiles & Domain Libraries
+
+- IT & Non-IT profiles
+- Domain-based keyword libraries
+- Automatic merge order:
     
-    Example:
+    ```bash
+    Core Library → Domain Library → Selected Profile
     
-    `Senior System Administrator | Cloud & Security | 17+ years experience`
+    ```
     
+- Profiles editable as YAML (no code changes needed)
+
+### ✅ Auto Profile Suggestion
+
+- Suggests best ATS profile based on Job Description
+- Works offline
+- Helps non-technical users choose the right profile
+
+### ✅ Import / Export
+
+- Import CV from **PDF / DOCX** (Autofill)
+- Import / Export CV as **JSON**
+- Export:
+    - PDF (Modern / Europass)
+    - DOCX (Modern / Europass)
+    - Plain ATS `.txt`
+
+### ✅ Desktop & Cloud Ready
+
+- Runs locally with Streamlit
+- Works on **Streamlit Cloud**
+- Windows & Linux compatible
+- PyInstaller desktop builds supported
 
 ---
 
-### 📄 CV Import (Autofill)
-
-- Import CVs from:
-    - **PDF** (eJobs, Europass, classic CV layouts)
-    - **DOCX**
-- Smart autofill engine:
-    - fixes duplicated characters from PDFs (`CCoossmmiinn → Cosmin`)
-    - ignores platform footers (e.g. `www.ejobs.ro`)
-    - safe merge (never overwrites manually filled fields)
-
----
-
-### 🤖 ATS Optimizer (Offline)
-
-- Editable **ATS Profiles (YAML)**
-- Offline **Job Description Analyzer**
-- Keyword matching & coverage score
-- Missing keywords detection
-- Bullet rewrite templates
-- Visual ATS score dashboard
-
-> 🔐 No external APIs. Everything runs locally/offline.
-> 
-
----
-
-### 📤 Export Options
-
-- PDF – Modern
-- PDF – Europass
-- Word – Modern
-- Word – Europass
-- ATS `.txt` (plain text, copy-paste friendly)
-- Import / Export full CV as **JSON**
-
----
-
-### 🔄 Reset & Persistence
-
-- **Reset Everything**
-- **Reset ATS / Job Description only**
-- Persistent ATS profile per job
-
----
-
-## 🧠 ATS Profiles
-
-ATS profiles are stored as editable YAML files:
+## 🧠 Architecture Overview
 
 ```
-ats_profiles/
-
-```
-
-Examples:
-
-- `cyber_security.yaml`
-- `network_administrator.yaml`
-- `cloud_engineer.yaml`
-- `devops_platform_engineering.yaml`
-
-Each profile defines:
-
-- job titles
-- keywords (structured & categorized)
-- action verbs
-- metrics
-- bullet rewrite templates
-
-👉 Profiles can be **selected, previewed, edited, and duplicated directly from the UI**.
-
----
-
-## 🗂️ Project Structure
-
-```
-cvbuilderats/
-├── app.py
-├── components/
-│   ├── personal_info_shared.py
-│   ├── work_experience.py
-│   ├── education.py
-│   ├── skills.py
+CVBuilder
+│
+├── app.py# Main Streamlit app
+│
+├── components/# UI components
 │   ├── ats_optimizer.py
+│   ├── ats_helper_panel.py
 │   ├── ats_dashboard.py
-│   └── profile_manager.py
-├── exporters/
-│   ├── pdf_generator.py
-│   └── docx_generator.py
+│   ├── profile_manager.py
+│   └── ...
+│
 ├── utils/
-│   ├──session.py
-│   ├── json_io.py
-│   ├── profiles.py
-│   └── pdf_autofill.py
+│   ├── profiles.py# Profiles, libraries, domain logic
+│   ├── jd_optimizer.py# Offline JD analysis engine
+│   ├── pdf_autofill.py# PDF / DOCX autofill
+│   └── session.py# State & reset logic
+│
 ├── ats_profiles/
-├── requirements.txt
-└── README.md
+│   ├── domains_index.yaml# IT / Non-IT domain mapping
+│   ├── core_en_ro.yaml# Global library
+│   ├── cyber_security.yaml# Example profile
+│   └── libraries/
+│       └── domains/
+│           ├── cyber_security.yaml
+│           ├── finance_accounting.yaml
+│           └── ...
+│
+└── exporters/
+    ├── pdf_generator.py
+    └── docx_generator.py
 
 ```
 
 ---
 
-## ▶️ Run Locally
+## 🔁 Job Description Flow (Single Source of Truth)
 
-### 1️⃣ Clone the repository
+There is **only one Job Description input** in the entire app:
 
-```bash
-gitclone https://github.com/your-username/cvbuilderats.git
-cd cvbuilderats
+```python
+cv["job_description"]
 
 ```
 
-### 2️⃣ Install dependencies
+It is shared by:
+
+- ATS Optimizer
+- Job Description Analyzer
+- ATS Helper
+- ATS Score Dashboard
+
+This eliminates duplicate copy-paste and keeps everything in sync.
+
+---
+
+## 🌍 Language Support
+
+- English 🇬🇧
+- Romanian 🇷🇴
+- Automatic detection from Job Description
+- Profiles & libraries support bilingual fields:
+
+```yaml
+keywords:
+core:
+en: [IncidentResponse,SIEM]
+ro: [Răspunslaincidente,SIEM]
+
+```
+
+---
+
+## 🛠️ Installation (Local)
 
 ```bash
+gitclone https://github.com/yourusername/CVBuilder.git
+cd CVBuilder
+python -m venv venv
+source venv/bin/activate# Windows: venv\Scripts\activate
 pip install -r requirements.txt
-
-```
-
-### 3️⃣ Start the app
-
-```bash
 streamlit run app.py
 
 ```
 
 ---
 
-## ☁️ Deploy on Streamlit Cloud
+## 🖥️ Desktop Build (Optional)
 
-1. Push the repository to GitHub
-2. Go to [https://streamlit.io/cloud](https://streamlit.io/cloud)
-3. Select the repo and `app.py`
-4. Deploy 🚀
+Windows example (PyInstaller):
 
-✅ Fully compatible with Streamlit Cloud.
+```bash
+pyinstaller cvbuilder.spec --clean --noconfirm
 
----
-
-## 📥 JSON Import / Export
-
-- Stable and forward-compatible schema
-- Supports:
-    - full CV export
-    - optional photo (base64)
-- Ideal for:
-    - backups
-    - versioning
-    - migration between devices
-
----
-
-## 🔐 Privacy & Security
-
-- No external services or APIs
-- ATS analysis is **100% offline**
-- No data leaves the app
-- Safe for real CVs and sensitive data
-
----
-
-## 🧪 Known Limitations
-
-- PDF parsing depends on text-layer quality
-- Scanned PDFs (images) are not supported (no OCR yet)
-- ATS scoring is heuristic (not ML-based)
-
----
-
-## 🛣️ Roadmap
-
-- [ ]  OCR support for scanned PDFs
-- [ ]  Skill gap suggestions
-- [ ]  Multiple CV variants per job
-- [ ]  Cover Letter generator
-- [ ]  LaTeX export
-- [ ]  Desktop builds (Windows / Linux)
-
-## Build commands
-### Windows
-``` bash
-python -m venv .venv
-.venv\Scripts\activate
-pip install -r requirements-build.txt
-pyinstaller .\cvbuilderats_windows.spec --noconfirm --clean
-```
-### Linux
-``` bash
-python3 -m venv .venv
-source .venv/bin/activate
-pip install -r requirements-build.txt
-pyinstaller cvbuilderats_linux.spec --noconfirm --clean
 ```
 
-### Rezultatul va fi în:
-``` bash
-dist/CVBuilderATS/
-```
+Produces a standalone executable running Streamlit locally.
+
+---
+
+## 🎯 Target Users
+
+- Cybersecurity professionals
+- IT & Non-IT job seekers
+- Recruiters & career coaches
+- Anyone who wants ATS-optimized CVs **without cloud AI**
+
+---
+
+## 🔐 Privacy & Offline First
+
+- No external APIs
+- No OpenAI / cloud AI calls
+- Job descriptions stay local
+- Works fully offline
+
+---
+
+## 📌 Roadmap (Optional Ideas)
+
+- Per-experience keyword highlighting
+- Multiple JD comparison
+- CV versioning per job
+- Cover letter generator (offline)
+- Multi-language export toggle
