@@ -1,8 +1,6 @@
-# README CV Builder nou
+# Coseus - CV Builder
 
-# CVBuilder
-
-**CVBuilder** is an **offline-first, ATS-optimized CV builder** that lets you create, analyze, and tailor resumes for specific job descriptions — without relying on external APIs or cloud AI services.
+**CV Builder** is an **offline-first, ATS-optimized CV builder** that lets you create, analyze, and tailor resumes for specific job descriptions — without relying on external APIs or cloud AI services.
 
 It supports **Modern ATS-friendly CVs** and **Europass format**, includes **job description analysis**, **keyword matching**, **profile/domain libraries**, and **automatic CV optimization per job**.
 
