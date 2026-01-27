@@ -6,6 +6,10 @@ It supports **Modern ATS-friendly CVs** and **Europass format**, includes **job 
 
 ---
 
+### 🔗 Live demo (no login required):
+https://cvbuilder-v2.streamlit.app/
+
+---
 ## 🚀 Key Features
 
 ### ✅ Modern ATS-Friendly CV Builder
