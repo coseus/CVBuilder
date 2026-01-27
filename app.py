@@ -265,11 +265,13 @@ with tab_modern:
         st.markdown("---")
     
         # ✅ ATS Profile selector (YOU WERE MISSING THIS)
+        lang = cv.get("jd_lang", "en")  # sau detectat din JD
+        
         with st.expander("ATS Profile (select / preview / edit)", expanded=True):
-            selected_profile = render_profile_manager(cv)
+            selected_profile = render_profile_manager(cv, lang=lang)
             if isinstance(selected_profile, dict) and selected_profile:
                 profile = selected_profile
-    
+                    
         st.markdown("---")
     
         # ✅ ONE shared JD input (used by ATS Optimizer + JD Analyzer + Helper + Dashboard)
