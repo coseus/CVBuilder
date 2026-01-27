@@ -204,10 +204,23 @@ Produces a standalone executable running Streamlit locally.
 
 ---
 
-## 📌 Roadmap (Optional Ideas)
+## Build commands
+### Windows
+``` bash
+python -m venv .venv
+.venv\Scripts\activate
+pip install -r requirements-build.txt
+pyinstaller .\cvbuilderats_windows.spec --noconfirm --clean
+```
+### Linux
+``` bash
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements-build.txt
+pyinstaller cvbuilderats_linux.spec --noconfirm --clean
+```
 
-- Per-experience keyword highlighting
-- Multiple JD comparison
-- CV versioning per job
-- Cover letter generator (offline)
-- Multi-language export toggle
+### Rezultatul va fi în:
+``` bash
+dist/CVBuilderATS/
+```
