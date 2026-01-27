@@ -1,3 +1,4 @@
+# components/profile_manager.py
 from __future__ import annotations
 
 from typing import Any, Dict, List, Optional
@@ -9,7 +10,6 @@ from utils.profiles import (
     load_profile,
     list_profiles,
     load_domains_index,
-    flatten_domains_index,
 )
 
 
@@ -27,10 +27,42 @@ def _pick_lang(val: Any, lang: str = "en") -> str:
     return str(val or "")
 
 
+def _flatten_domains_index(idx: Dict[str, Any]) -> List[Dict[str, Any]]:
+    """
+    Returns a flat list of domains with optional group_id:
+      [{id,label,library,group_id?}, ...]
+    Supports both grouped and flat formats.
+    """
+    out: List[Dict[str, Any]] = []
+    if not isinstance(idx, dict):
+        return out
+
+    if isinstance(idx.get("groups"), list):
+        for g in idx.get("groups") or []:
+            if not isinstance(g, dict):
+                continue
+            gid = str(g.get("id") or "").strip()
+            for d in (g.get("domains") or []):
+                if not isinstance(d, dict):
+                    continue
+                if not d.get("id"):
+                    continue
+                dd = dict(d)
+                dd["group_id"] = gid
+                out.append(dd)
+
+    if not out and isinstance(idx.get("domains"), list):
+        for d in idx.get("domains") or []:
+            if isinstance(d, dict) and d.get("id"):
+                out.append(dict(d))
+
+    return out
+
+
 def render_profile_manager(cv: Dict[str, Any], lang: str = "en") -> Optional[Dict[str, Any]]:
     """
-    UI: Select / preview ATS profile (+ IT/Non-IT filter from domains_index.yaml).
-    Updates cv["ats_profile"] and returns merged profile dict.
+    UI: Select / preview ATS profile + domain filter + auto-suggest from JD.
+    Updates cv["ats_profile"] with selected id and returns loaded (merged) profile dict.
     """
     if not isinstance(cv, dict):
         return None
@@ -38,129 +70,139 @@ def render_profile_manager(cv: Dict[str, Any], lang: str = "en") -> Optional[Dic
     cv.setdefault("ats_profile", "cyber_security")
 
     idx = load_domains_index()
-    flat = flatten_domains_index(idx)
+    domains = _flatten_domains_index(idx)
 
-    # --- build groups map for filter UI ---
-    group_labels: Dict[str, str] = {"all": "All"}
-    groups = []
-    if isinstance(idx, dict) and isinstance(idx.get("groups"), list):
+    # Groups for filter
+    groups: List[Dict[str, Any]] = []
+    if isinstance(idx.get("groups"), list):
         for g in idx.get("groups") or []:
             if isinstance(g, dict) and g.get("id"):
-                gid = str(g.get("id")).strip()
-                if gid:
-                    groups.append(g)
-                    group_labels[gid] = _pick_lang(g.get("label"), lang=lang) or gid
+                groups.append(g)
 
-    # --- filter UI ---
+    # Domain filter UI
     domain_filter_id = cv.get("ats_domain_filter", "all")
-    if len(group_labels) > 1:
-        keys = list(group_labels.keys())
+    if groups:
+        group_labels = {"all": "All"}
+        for g in groups:
+            gid = str(g.get("id"))
+            group_labels[gid] = _pick_lang(g.get("label"), lang=lang) or gid
+
         domain_filter_id = st.selectbox(
             "Domain filter",
-            options=keys,
+            options=list(group_labels.keys()),
             format_func=lambda k: group_labels.get(k, k),
-            index=keys.index(domain_filter_id) if domain_filter_id in keys else 0,
+            index=list(group_labels.keys()).index(domain_filter_id) if domain_filter_id in group_labels else 0,
             key="ats_domain_filter",
-            help="Filters profile list (IT / Non-IT) if domains_index.yaml provides groups.",
+            help="Filters the profile list (IT / Non-IT etc.) if domains_index.yaml provides groups.",
         )
         cv["ats_domain_filter"] = domain_filter_id
-    else:
-        domain_filter_id = "all"
-        cv["ats_domain_filter"] = "all"
 
-    # --- allowed ids from domains_index (this is where your error was) ---
+    # Allowed ids based on filter
     allowed_ids: Optional[set] = None
-    if domain_filter_id != "all":
+    if groups and domain_filter_id != "all":
         allowed_ids = set()
-        if isinstance(flat, list):
-            for d in flat:
-                # ✅ FIX: d may be str/None/etc
-                if not isinstance(d, dict):
-                    continue
-                if d.get("group_id") == domain_filter_id:
-                    did = (d.get("domain_id") or d.get("id") or "").strip()
-                    if did:
-                        allowed_ids.add(did)
+        for d in domains:
+            if isinstance(d, dict) and d.get("group_id") == domain_filter_id:
+                allowed_ids.add(str(d.get("id")))
 
-    # --- list profiles (support both signatures) ---
-    try:
-        profiles_list = list_profiles(lang=lang)  # type: ignore
-    except TypeError:
-        profiles_list = list_profiles()
-
-    if not isinstance(profiles_list, list):
-        st.error("list_profiles() did not return a list.")
-        return None
-
-    if allowed_ids is not None and allowed_ids:
-        filtered = [p for p in profiles_list if isinstance(p, dict) and p.get("id") in allowed_ids]
-        if filtered:
-            profiles_list = filtered
-        else:
-            st.warning(
-                "No profiles found for this filter. "
-                "Check domains_index.yaml: domains[].id must match profile filenames (ats_profiles/<id>.yaml). "
-                "Showing all profiles."
-            )
+    # List profiles (friendly titles)
+    profiles_list = list_profiles(lang=lang)
+    if allowed_ids is not None:
+        profiles_list = [p for p in profiles_list if str(p.get("id")) in allowed_ids]
 
     if not profiles_list:
-        st.warning("No profiles found. Check ats_profiles/ seeding or file names.")
+        st.warning("No profiles found for this filter. Check domains_index.yaml mapping or profile ids.")
         return None
 
-    id_to_title = {}
-    ids: List[str] = []
-    for p in profiles_list:
-        if not isinstance(p, dict):
-            continue
-        pid = str(p.get("id") or "").strip()
-        if not pid:
-            continue
-        ids.append(pid)
-        id_to_title[pid] = str(p.get("title") or pid)
+    id_to_title = {p["id"]: p["title"] for p in profiles_list}
 
-    if not ids:
-        st.warning("Profiles list is empty after normalization.")
-        return None
-
-    # keep selection stable
+    # Keep selection stable
     if cv.get("ats_profile") not in id_to_title:
-        cv["ats_profile"] = ids[0]
+        cv["ats_profile"] = profiles_list[0]["id"]
 
     selected_id = st.selectbox(
         "Select profile",
-        options=ids,
+        options=[p["id"] for p in profiles_list],
         format_func=lambda pid: f"{id_to_title.get(pid, pid)} ({pid})",
-        index=ids.index(cv["ats_profile"]) if cv["ats_profile"] in ids else 0,
+        index=[p["id"] for p in profiles_list].index(cv["ats_profile"]),
         key="ats_profile_select",
     )
 
     if selected_id != cv.get("ats_profile"):
         cv["ats_profile"] = selected_id
+        # Clear cached analysis so UI updates immediately
         cv.pop("ats_analysis", None)
         cv.pop("ats_score", None)
         st.rerun()
 
+    # Load selected profile merged with libraries
     try:
         prof = load_profile(cv["ats_profile"], lang=lang)
     except ProfileError as e:
         st.error(str(e))
         return None
-    except Exception as e:
-        st.error(f"Failed to load profile: {e}")
-        return None
 
+    # Warnings
     warnings = prof.get("_warnings") or []
-    if isinstance(warnings, list) and warnings:
+    if warnings:
         st.warning(" • ".join([str(w) for w in warnings][:5]))
 
+    # -------------------------
+    # Auto-suggest from shared JD
+    # -------------------------
+    from utils import jd_optimizer
+
+    jd_optimizer.ensure_jd_state(cv)
+    jd_text = jd_optimizer.get_current_jd(cv)
+
+    with st.expander("Auto-suggest profile from Job Description", expanded=False):
+        if not jd_text.strip():
+            st.info("Paste a Job Description in the shared JD box to get suggestions.")
+        else:
+            sugg = jd_optimizer.suggest_profiles_from_jd(jd_text, lang=lang, top_k=5)
+            if not sugg:
+                st.info("No suggestions found (not enough signal in JD or libraries missing).")
+            else:
+                st.caption("Top suggestions (domain-library keyword overlap):")
+                for s in sugg:
+                    pid = str(s.get("profile_id") or "")
+                    label = str(s.get("label") or pid)
+                    score = float(s.get("score") or 0.0)
+
+                    c1, c2, c3 = st.columns([3, 1, 1], gap="small")
+                    with c1:
+                        st.write(f"**{label}**  (`{pid}`)")
+                    with c2:
+                        st.write(f"{score:.0f}%")
+                    with c3:
+                        disabled = (pid == cv.get("ats_profile"))
+                        if st.button("Switch", key=f"switch_{pid}", use_container_width=True, disabled=disabled):
+                            cv["ats_profile"] = pid
+                            cv.pop("ats_analysis", None)
+                            cv.pop("ats_score", None)
+                            st.rerun()
+
+                # Helpful mismatch warning
+                role_hint = (cv.get("jd_state", {}) or {}).get("current_role_hint", "")
+                if role_hint and isinstance(prof.get("job_titles"), list):
+                    titles = " ".join([str(x).lower() for x in prof.get("job_titles") or []])
+                    if role_hint.lower() not in titles:
+                        st.warning(
+                            "⚠️ Role hint seems different from selected profile job titles. "
+                            "Consider switching to a suggested profile for better results."
+                        )
+
+    # Preview
     with st.expander("Profile preview (merged)", expanded=False):
-        st.write(
-            {
-                "id": prof.get("id"),
-                "domain": prof.get("domain"),
-                "title": _pick_lang(prof.get("title"), lang),
-                "source": prof.get("_source_file", ""),
-            }
-        )
+        st.write({"id": prof.get("id"), "domain": prof.get("domain"), "title": _pick_lang(prof.get("title"), lang)})
+        st.caption("Keywords (top):")
+        kw = prof.get("keywords") or {}
+        if isinstance(kw, dict):
+            top = []
+            for bucket in ["core", "technologies", "tools", "certifications", "frameworks", "soft_skills"]:
+                vals = kw.get(bucket) or []
+                if isinstance(vals, list):
+                    top.extend(vals[:8])
+            st.write(", ".join(top[:40]) if top else "—")
 
     return prof
