@@ -227,8 +227,16 @@ def _seed_from_source(src_root: Path) -> None:
             shutil.copy2(p, out)
 
     # root yaml -> USER_PROFILES_DIR
+    # Skip non-profile yaml files such as domains_index.yaml.
     if src_root.exists():
         for fn in src_root.glob("*.yaml"):
+            if fn.name.lower() == "domains_index.yaml":
+                # keep it at ATS root, not inside profiles folder
+                dst_idx = ATS_ROOT_DIR / fn.name
+                if not dst_idx.exists():
+                    dst_idx.parent.mkdir(parents=True, exist_ok=True)
+                    shutil.copy2(fn, dst_idx)
+                continue
             out = USER_PROFILES_DIR / fn.name
             if not out.exists():
                 shutil.copy2(fn, out)
@@ -646,38 +654,66 @@ def load_profile(profile_id: str, lang: str = "en") -> Dict[str, Any]:
 
 
 def list_profiles(*, lang: str = "en") -> List[Dict[str, str]]:
-    """
-    Returns list of profiles available to UI.
+    """Return existing profile files, with optional ordering/labels from domains_index.yaml.
+
+    Why:
+    - domains_index.yaml may include domain entries that don't have a profile YAML.
+    - The UI should only list selectable items that can actually be loaded.
     """
     ensure_seeded()
 
-    # If domains_index exists, prefer it for labeling + ordering
-    idx = flatten_domains_index(lang=lang)
-    idx_profiles = idx.get("profiles") if isinstance(idx.get("profiles"), list) else None
-    if idx_profiles:
-        out: List[Dict[str, str]] = []
-        for p in idx_profiles:
-            if not isinstance(p, dict):
-                continue
-            pid = str(p.get("id") or "").strip()
-            if not pid:
-                continue
-            label = str(p.get("label") or pid).strip()
-            out.append({"id": pid, "filename": f"{pid}.yaml", "title": label})
-        return out
+    # 1) Scan actual profile YAML files
+    existing_files: Dict[str, Path] = {}
+    for fn in USER_PROFILES_DIR.glob("*.yaml"):
+        if fn.name.lower() == "domains_index.yaml":
+            continue
+        existing_files[fn.stem] = fn
 
+    if not existing_files:
+        return []
+
+    # 2) Build label + order from domains_index (best-effort)
+    idx = flatten_domains_index(lang=lang)
+    order: List[str] = []
+    labels: Dict[str, str] = {}
+    idx_profiles = idx.get("profiles") if isinstance(idx.get("profiles"), list) else []
+    for p in idx_profiles:
+        if not isinstance(p, dict):
+            continue
+        pid = str(p.get("id") or "").strip()
+        if not pid:
+            continue
+        order.append(pid)
+        labels[pid] = str(p.get("label") or pid).strip() or pid
+
+    # 3) Resolve final ordering: index order first (only those that exist), then the rest alphabetically
+    seen = set()
+    final_ids: List[str] = []
+    for pid in order:
+        if pid in existing_files and pid not in seen:
+            final_ids.append(pid)
+            seen.add(pid)
+    for pid in sorted(existing_files.keys()):
+        if pid not in seen:
+            final_ids.append(pid)
+            seen.add(pid)
+
+    # 4) For each profile, prefer label from index; otherwise fall back to YAML title or stem
     out: List[Dict[str, str]] = []
-    for fn in sorted(USER_PROFILES_DIR.glob("*.yaml")):
-        pid = fn.stem
-        title = pid.replace("_", " ").title()
-        try:
-            data = yaml.safe_load(_read_text(fn)) or {}
-            if isinstance(data, dict):
-                t = data.get("title")
-                title = str(_pick_lang(t, lang) or title).strip() or title
-        except Exception:
-            pass
+    for pid in final_ids:
+        fn = existing_files[pid]
+        title = labels.get(pid)
+        if not title:
+            title = pid.replace("_", " ").title()
+            try:
+                data = yaml.safe_load(_read_text(fn)) or {}
+                if isinstance(data, dict):
+                    t = data.get("title")
+                    title = str(_pick_lang(t, lang) or title).strip() or title
+            except Exception:
+                pass
         out.append({"id": pid, "filename": fn.name, "title": title})
+
     return out
 
 
