@@ -590,3 +590,35 @@ def import_jd_state(cv: dict, jd_state_json: str) -> None:
             cv["jd_state"] = obj
     except Exception:
         pass
+
+
+# ---------------------------
+# Convenience wrapper (used by components)
+# ---------------------------
+def analyze_current(cv: dict, profile: Optional[dict] = None, role_hint: str = "") -> Dict[str, Any]:
+    """
+    Analyze the shared JD stored in cv["job_description"] and return the analysis dict.
+    This is a thin wrapper over analyze_jd(), keeping backward compatibility for components.
+
+    - persists per-job hash in cv["jd_state"]
+    - computes coverage/present/missing via analyze_jd()
+    """
+    ensure_jd_state(cv)
+    jd_text = (cv.get("job_description") or "").strip()
+    if not jd_text:
+        # keep consistent keys so UI doesn't break
+        return {
+            "hash": "",
+            "lang": cv.get("jd_lang", detect_lang("")),
+            "coverage": 0.0,
+            "present": [],
+            "missing": [],
+            "keywords": [],
+            "role_hint": role_hint or "",
+        }
+
+    # store role_hint in state for convenience
+    cv.setdefault("jd_state", {})["current_role_hint"] = role_hint or cv.get("jd_state", {}).get("current_role_hint", "")
+
+    # analyze_jd() in this module already updates state + jobs hash
+    return analyze_jd(cv, role_hint=role_hint or cv.get("jd_state", {}).get("current_role_hint", ""), profile=profile)
