@@ -42,7 +42,7 @@ st.set_page_config(page_title="Coseus - CV Builder - Modern & Europass", page_ic
 init_session_state()
 cv = st.session_state.cv
 
-st.title("Coseus - CV Builder - Modern (ATS) vs Europass")
+st.title("Coseus - CV Builder - Modern (ATS) & Europass")
 
 # ==========================
 # Sidebar: Import/Export/Reset
@@ -95,9 +95,9 @@ tab_import, tab_modern, tab_europass = st.tabs(["Import PDF (Autofill)", "Modern
 # TAB: Import PDF (Autofill)
 # --------------------------
 with tab_import:
-    st.info("Încarcă un CV PDF sau DOCX (RO/EN) și folosește Autofill. Apoi verifică în Modern/Europass.")
+    st.info("Upload a PDF or DOCX CV (RO/EN) and use Autofill. Then check in Modern/Europass.")
     if not PDF_AUTOFILL_AVAILABLE:
-        st.warning("Autofill indisponibil (utils/pdf_autofill.py import error sau lipsă dependență).")
+        st.warning("Autofill unavailable (utils/pdf_autofill.py import error or missing dependency).")
     else:
         up = st.file_uploader("Upload CV (PDF/DOCX)", type=["pdf", "docx"], key="pdf_upload")
 
