@@ -1,25 +1,21 @@
-# components/ats_helper_panel.py
 from __future__ import annotations
 
+from typing import Any, Dict, Optional, List
+
 import streamlit as st
-from typing import Any, Dict, Optional
 
 from utils import jd_optimizer
 from utils.profiles import load_profile
 
 
-def render_ats_helper_panel(
-    cv: Dict[str, Any],
-    key_prefix: str = "ats_help",
-    profile: Optional[Dict[str, Any]] = None,
-):
+def render_ats_helper_panel(cv: Dict[str, Any], key_prefix: str = "ats_help", profile: Optional[Dict[str, Any]] = None) -> None:
     """
-    ATS Helper: verbs/templates/metrics/keywords from merged profile+libraries.
-    Uses shared JD (cv["job_description"]) managed by jd_optimizer.
+    ATS Helper: shows verbs/templates/metrics/keywords from merged profile+libraries.
+    Uses ONE shared JD text managed by jd_optimizer (cv["job_description"]).
     """
     jd_optimizer.ensure_jd_state(cv)
 
-    # Load profile if not provided
+    # Load profile if not provided (keeps app.py simpler)
     if profile is None:
         pid = cv.get("ats_profile", "cyber_security")
         lang = cv.get("jd_lang", "en")
@@ -29,16 +25,9 @@ def render_ats_helper_panel(
             profile = {"keywords": {}, "action_verbs": [], "metrics": [], "bullet_templates": []}
 
     st.subheader("ATS Helper (keywords • metrics • verbs • templates)")
-    st.caption("Folosește Job Description-ul shared (nu mai trebuie paste aici).")
-
-    jd_text = jd_optimizer.get_current_jd(cv).strip()
-    if not jd_text:
-        st.info("Pastează un Job Description în 'Job Description (shared)'.")
-        return
+    st.caption("Folosește Job Description-ul shared. Poți auto-aplica keywords lipsă în Skills.")
 
     analysis = jd_optimizer.get_current_analysis(cv)
-    if not analysis:
-        analysis = jd_optimizer.analyze_jd(cv, profile=profile, role_hint=cv.get("jd_role_hint", ""))
 
     col1, col2 = st.columns(2, gap="large")
 
@@ -46,15 +35,18 @@ def render_ats_helper_panel(
         st.markdown("**Coverage**")
         st.write(f"{analysis.get('coverage', 0):.1f}% keywords found in CV")
 
-        missing = analysis.get("missing", [])
-        if isinstance(missing, list) and missing:
+        missing = analysis.get("missing", [])[:25]
+        if missing:
             st.markdown("**Missing keywords (top)**")
-            st.write(", ".join(missing[:25]))
+            st.write(", ".join(missing))
         else:
-            st.success("Nice — no missing keywords detected (top set).")
+            if (cv.get("job_description") or "").strip():
+                st.success("Nice — no missing keywords detected (top set).")
+            else:
+                st.info("Paste JD în 'Job Description (shared)'.")
 
         if st.button("Auto-apply missing → Modern keywords", key=f"{key_prefix}_apply_kw", use_container_width=True):
-            jd_optimizer.apply_missing_to_extra_keywords(cv, limit=25)
+            jd_optimizer.apply_auto_to_modern_skills(cv, analysis)
             st.success("Applied into Modern → Keywords (extra).")
             st.rerun()
 
@@ -76,10 +68,7 @@ def render_ats_helper_panel(
     c3, c4, c5 = st.columns(3, gap="large")
     with c3:
         st.markdown("**Action verbs**")
-        if verbs:
-            st.write(", ".join(list(verbs)[:50]))
-        else:
-            st.info("No verbs available in this profile.")
+        st.write(", ".join(list(verbs)[:50]) if verbs else "—")
 
     with c4:
         st.markdown("**Metrics ideas**")
@@ -87,7 +76,7 @@ def render_ats_helper_panel(
             for m in list(metrics)[:10]:
                 st.write(f"• {m}")
         else:
-            st.info("No metrics available in this profile.")
+            st.write("—")
 
     with c5:
         st.markdown("**Bullet templates**")
@@ -95,4 +84,4 @@ def render_ats_helper_panel(
             for t in list(templates)[:6]:
                 st.write(f"• {t}")
         else:
-            st.info("No templates available in this profile.")
+            st.write("—")
