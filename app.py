@@ -216,7 +216,7 @@ with tab_import:
 # TAB: Modern (ATS-friendly)
 # --------------------------
 with tab_modern:
-    st.info("Format modern - scurt, clar, optimizat pentru ATS + recrutori. Recomandat pentru aplicații online.")
+    st.info("Modern format - short, clear, optimized for ATS + recruiters. Recommended for online applications.")
 
     # Load selected ATS profile (user-editable YAML in ./ats_profiles)
     try:
@@ -253,7 +253,7 @@ with tab_modern:
 
     # ---- Right: photo toggle + profile manager + scoring ----
     with col2:
-        st.subheader("Foto (nu e recomandat pentru ATS)")
+        st.subheader("Photo (not recommended for ATS)")
         cv["include_photo_modern"] = st.toggle(
             "Include foto în Modern export",
             value=bool(cv.get("include_photo_modern", False)),
@@ -283,7 +283,7 @@ with tab_modern:
                 value=cv.get("job_description", ""),
                 height=240,
                 key="job_description_shared",
-                placeholder="Paste aici anunțul de job (EN/RO)...",
+                placeholder="Paste the job description here (EN/RO)...",
             )
     
             # auto update analysis when text changes
@@ -336,7 +336,7 @@ with tab_modern:
 # TAB: Europass Complet
 # --------------------------
 with tab_europass:
-    st.info("Format Europass - complet, toate câmpurile.")
+    st.info("Europass format - complete, all fields.")
     # ✅ Use the full editor you already have
     render_europass_complete(cv, key_prefix="europass")
 
@@ -345,7 +345,7 @@ with tab_europass:
     col_left, col_right = st.columns([3, 1.6], gap="large")
     with col_left:
         # You already edit exp/edu in europass_complete; these can be redundant.
-        st.caption("Note: Exp/Edu/Languages/Skills sunt deja în Europass Complete (dacă vrei, pot elimina duplicarea).")
+        st.caption("Notes: Exp/Edu/Languages/Skills are already in Europass Complete (if you want, I can remove the duplication).")
     with col_right:
         render_photo_upload(cv, prefix="europass_")
         st.markdown("---")
@@ -369,7 +369,7 @@ with col_pdf:
         try:
             pdf_bytes = generate_pdf_modern(cv, lang=st.session_state.get("export_lang", "en")) if "lang" in generate_pdf_modern.__code__.co_varnames else generate_pdf_modern(cv)
             st.sidebar.download_button(
-                label="Descarcă PDF Modern",
+                label="Download PDF Modern",
                 data=pdf_bytes,
                 file_name="cv_modern.pdf",
                 mime="application/pdf",
@@ -382,7 +382,7 @@ with col_pdf:
         try:
             pdf_bytes = generate_pdf_europass(cv, lang=st.session_state.get("export_lang", "en")) if "lang" in generate_pdf_europass.__code__.co_varnames else generate_pdf_europass(cv)
             st.sidebar.download_button(
-                label="Descarcă PDF Europass",
+                label="Download PDF Europass",
                 data=pdf_bytes,
                 file_name="cv_europass.pdf",
                 mime="application/pdf",
@@ -396,7 +396,7 @@ with col_docx:
         try:
             docx_bytes = generate_docx_modern(cv, lang=st.session_state.get("export_lang", "en")) if "lang" in generate_docx_modern.__code__.co_varnames else generate_docx_modern(cv)
             st.sidebar.download_button(
-                label="Descarcă Word Modern",
+                label="Download Word Modern",
                 data=docx_bytes,
                 file_name="cv_modern.docx",
                 mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
@@ -409,7 +409,7 @@ with col_docx:
         try:
             docx_bytes = generate_docx_europass(cv, lang=st.session_state.get("export_lang", "en")) if "lang" in generate_docx_europass.__code__.co_varnames else generate_docx_europass(cv)
             st.sidebar.download_button(
-                label="Descarcă Word Europass",
+                label="Download Word Europass",
                 data=docx_bytes,
                 file_name="cv_europass.docx",
                 mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
