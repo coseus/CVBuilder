@@ -1,0 +1,35 @@
+# ats_profiles/libraries/domains/finance_accounting.yaml
+title:
+  en: Finance & Accounting Domain Library
+  ro: Librărie domeniu Financiar & Contabilitate
+
+keywords:
+  core:
+    en:
+      - Accounts Payable
+      - Accounts Receivable
+      - Financial Reporting
+      - Reconciliation
+      - Budgeting
+      - Audit Support
+    ro:
+      - Conturi furnizori
+      - Conturi clienți
+      - Raportare financiară
+      - Reconciliere
+      - Bugetare
+      - Suport audit
+
+  tools:
+    en: [Excel, ERP, SAP, Oracle]
+    ro: [Excel, ERP, SAP, Oracle]
+
+metrics:
+  en:
+    - Reduced month-end close time by {value}
+    - Improved reconciliation accuracy by {value}
+    - Identified cost savings of {value}
+  ro:
+    - Redus timpul de închidere lunară cu {value}
+    - Îmbunătățit acuratețea reconcilierilor cu {value}
+    - Identificat economii de {value}

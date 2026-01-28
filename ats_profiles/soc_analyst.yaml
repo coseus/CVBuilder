@@ -1,0 +1,18 @@
+id: soc_analyst
+domain: cyber_security
+title:
+  en: SOC Analyst
+  ro: Analist SOC
+
+job_titles:
+  en: [SOC Analyst, Security Analyst, Blue Team Analyst]
+  ro: [Analist SOC, Analist Securitate, Blue Team Analyst]
+
+keywords:
+  core:
+    en: [SIEM, Alert Triage, Incident Response, Threat Hunting]
+    ro: [SIEM, Triaj alerte, Răspuns la incidente, Threat Hunting]
+
+notes:
+  en: Focus on detection engineering, alert triage, and incident response metrics.
+  ro: Focus pe detecție, triaj alerte și metrici de incident response.

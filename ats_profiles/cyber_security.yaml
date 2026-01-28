@@ -1,0 +1,179 @@
+id: cyber_security
+domain: cyber_security
+
+title: "Cyber Security (General)"
+
+# UI helper: suggested target roles/titles (ATS-friendly)
+job_titles:
+  - "Cyber Security Specialist"
+  - "Security Engineer"
+  - "SOC Analyst"
+  - "Penetration Tester"
+  - "Blue Team Analyst"
+  - "Incident Response Analyst"
+  - "Security Operations Engineer"
+
+# Keywords grouped for ATS + your app
+keywords:
+  core:
+    - "Cyber Security"
+    - "Information Security"
+    - "Security Operations"
+    - "Risk Management"
+    - "Security Monitoring"
+    - "Incident Response"
+    - "Vulnerability Management"
+    - "Threat Detection"
+    - "Security Hardening"
+    - "Security Baselines"
+    - "Access Control"
+    - "Least Privilege"
+    - "Security Policies"
+    - "Security Awareness"
+    - "Continuous Improvement"
+
+  technologies:
+    - "Microsoft Entra ID"
+    - "Azure AD"
+    - "Active Directory"
+    - "Windows Server"
+    - "Linux"
+    - "Microsoft 365"
+    - "Intune"
+    - "PowerShell"
+    - "Bash"
+    - "Networking"
+    - "TCP/IP"
+    - "DNS"
+    - "DHCP"
+    - "HTTP/HTTPS"
+    - "VPN"
+    - "VLAN"
+    - "Azure"
+    - "AWS"
+
+  tools:
+    - "SIEM"
+    - "EDR"
+    - "XDR"
+    - "Microsoft Defender"
+    - "Defender for Endpoint"
+    - "Defender for Identity"
+    - "Defender for Cloud"
+    - "Microsoft Sentinel"
+    - "Splunk"
+    - "Elastic"
+    - "Wireshark"
+    - "Nmap"
+    - "Burp Suite"
+    - "Nessus"
+    - "OpenVAS"
+    - "Metasploit"
+    - "CrowdStrike"
+    - "Tenable"
+    - "Qualys"
+    - "Sysmon"
+    - "OSQuery"
+    - "EDR Triage"
+    - "Log Analysis"
+    - "Monitoring Tools"
+
+  certifications:
+    - "CompTIA Security+"
+    - "CompTIA Network+"
+    - "eJPT"
+    - "eCPPT"
+    - "OSCP"
+    - "CEH"
+    - "CCNA"
+    - "AZ-500"
+    - "SC-200"
+    - "SC-300"
+    - "SC-900"
+    - "ISO 27001 (awareness)"
+    - "ITIL (optional)"
+
+  frameworks:
+    - "NIST"
+    - "NIST CSF"
+    - "CIS Controls"
+    - "MITRE ATT&CK"
+    - "OWASP Top 10"
+    - "ISO 27001"
+    - "Zero Trust"
+
+  soft_skills:
+    - "Problem Solving"
+    - "Communication"
+    - "Documentation"
+    - "Cross-team Collaboration"
+    - "Ownership"
+    - "Attention to Detail"
+    - "Prioritization"
+
+# Action verbs to boost bullet variety
+action_verbs:
+  - "Implemented"
+  - "Hardened"
+  - "Secured"
+  - "Deployed"
+  - "Configured"
+  - "Monitored"
+  - "Investigated"
+  - "Triaged"
+  - "Resolved"
+  - "Automated"
+  - "Optimized"
+  - "Remediated"
+  - "Validated"
+  - "Assessed"
+  - "Audited"
+  - "Documented"
+  - "Standardized"
+  - "Improved"
+  - "Reduced"
+  - "Coordinated"
+  - "Led"
+  - "Trained"
+
+# Metrics prompts for measurable bullets (ATS + recruiter-friendly)
+metrics:
+  - "MTTR / time-to-resolve"
+  - "MTTD / time-to-detect"
+  - "% reduction in incidents"
+  - "patch compliance %"
+  - "vulnerability remediation SLA"
+  - "number of endpoints / servers"
+  - "availability / uptime %"
+  - "alert volume reduction"
+  - "false positive reduction"
+  - "incident count / month"
+  - "backup success rate"
+  - "phishing simulation rate"
+  - "policy adoption %"
+  - "audit findings reduced"
+  - "cost reduction (licenses/tools)"
+
+# Bullet templates for auto-rewrite (works with your ats_rewrite helper)
+bullet_templates:
+  - "Monitored {siem_or_platform} alerts and triaged {incident_type}; reduced {metric} by {value} through tuned detections."
+  - "Investigated suspicious activity using {tools}; contained impact and produced incident report with remediation steps."
+  - "Implemented {control} (e.g., MFA/conditional access) across {scope}; improved security posture and reduced account risk."
+  - "Hardened {system_or_service} using CIS/NIST baselines; improved compliance and reduced misconfigurations."
+  - "Performed vulnerability scans with {scanner}; prioritized fixes by risk and met remediation SLA for {scope}."
+  - "Automated security tasks using {scripting}; reduced manual effort by {value} and improved consistency."
+  - "Supported penetration testing on {scope}; identified {vuln_type} and delivered actionable remediation guidance."
+  - "Built and maintained documentation/runbooks for {process}; improved team handover and incident response speed."
+  - "Coordinated with IT/Network teams to remediate {issue}; validated fix and prevented recurrence."
+
+section_priority:
+  - "Professional Experience"
+  - "Summary"
+  - "Technical Skills"
+  - "Education"
+  - "Certifications"
+
+ats_hint: >
+  Keep skills grouped (Security / Networking / Cloud / OS / Scripting / Tools). Use standard headings and measurable outcomes.
+notes: >
+  This is a general Cyber Security profile meant to fit SOC / Security Engineer / Pentest paths. Refine by JD keywords.

@@ -1,0 +1,17 @@
+title:
+  en: GRC & Compliance Domain Library
+  ro: Librărie domeniu GRC & Conformitate
+keywords:
+  core:
+    en: [Risk Management, Policies, Controls, Audit Readiness, Compliance, Third-Party Risk]
+    ro: [Management risc, Politici, Controale, Pregătire audit, Conformitate, Risc terți]
+  frameworks:
+    en: [ISO 27001, SOC 2, NIST, GDPR]
+    ro: [ISO 27001, SOC 2, NIST, GDPR]
+metrics:
+  en:
+    - Closed {value} audit findings
+    - Improved compliance coverage by {value}
+  ro:
+    - Închis {value} constatări audit
+    - Îmbunătățit acoperirea conformității cu {value}

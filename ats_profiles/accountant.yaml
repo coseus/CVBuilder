@@ -1,0 +1,9 @@
+id: accountant
+domain: finance_accounting
+title:
+  en: Accountant
+  ro: Contabil
+
+job_titles:
+  en: [Accountant, Financial Accountant]
+  ro: [Contabil, Contabil financiar]
