@@ -7,7 +7,7 @@ def render_education(cv, prefix="", list_key="educatie", title="Education and tr
     with st.form(key=f"{prefix}{list_key}_add_form", clear_on_submit=True):
         col1, col2 = st.columns([1, 2])
         with col1:
-            perioada = st.text_input("Perioada", key=f"{prefix}{list_key}_perioada")
+            perioada = st.text_input("Period", key=f"{prefix}{list_key}_perioada")
         with col2:
             calificare = st.text_input("Qualification / Diploma", key=f"{prefix}{list_key}_calificare")
 
@@ -15,7 +15,7 @@ def render_education(cv, prefix="", list_key="educatie", title="Education and tr
         institutie = st.text_input("Institution / Provider", key=f"{prefix}{list_key}_institutie")
         nivel = st.text_input("Level (EQF, Bachelor's degree, etc.)", key=f"{prefix}{list_key}_nivel")
 
-        submitted = st.form_submit_button("Adaugă")
+        submitted = st.form_submit_button("Add")
         if submitted and calificare.strip():
             cv[list_key].append({
                 'perioada': perioada.strip(),
@@ -24,7 +24,7 @@ def render_education(cv, prefix="", list_key="educatie", title="Education and tr
                 'institutie': institutie.strip(),
                 'nivel': nivel.strip()
             })
-            st.success("Educație adăugată!")
+            st.success("Added education!")
             st.rerun()
 
     if not cv.get(list_key):
@@ -52,7 +52,7 @@ def render_education(cv, prefix="", list_key="educatie", title="Education and tr
 
             c1, c2 = st.columns([1,2])
             with c1:
-                edu['perioada'] = st.text_input("Perioada", value=edu.get('perioada',''), key=f"{prefix}{list_key}_e_per_{i}")
+                edu['perioada'] = st.text_input("Period", value=edu.get('perioada',''), key=f"{prefix}{list_key}_e_per_{i}")
             with c2:
                 edu['calificare'] = st.text_input("Qualification / Diploma", value=edu.get('calificare',''), key=f"{prefix}{list_key}_e_cal_{i}")
 
