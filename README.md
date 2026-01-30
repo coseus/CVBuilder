@@ -1,6 +1,6 @@
 # Coseus - CV Builder
 
-🚀 **CV Builder** is a **desktop, offline-first CV generator** focused on **ATS (Applicant Tracking System) optimization**.
+🚀 **CV Builder** is a **desktop, offline-first CV generator** focused on **ATS (Applicant Tracking System) optimization**. 
 
 It supports **Modern ATS-friendly CVs** and **Europass format**, includes **job description analysis**, **keyword matching**, **profile/domain libraries**, and **automatic CV optimization per job**.
 
