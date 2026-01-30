@@ -1,95 +1,107 @@
-# Coseus - CV Builder
+# **Coseus – CV Builder**
 
-🚀 **CV Builder** is a **desktop, offline-first CV generator** focused on **ATS (Applicant Tracking System) optimization**. 
+🚀 **Coseus CV Builder** is a **desktop-first, offline-capable CV generator** designed to create **ATS-optimized resumes** with precision and control.
 
-It supports **Modern ATS-friendly CVs** and **Europass format**, includes **job description analysis**, **keyword matching**, **profile/domain libraries**, and **automatic CV optimization per job**.
+It supports **Modern ATS-friendly CVs** and **full Europass format**, includes **offline job description analysis**, **keyword matching**, **domain-based profiles**, and **automatic CV optimization per job** — all without relying on cloud AI services.
+
+---
+
+## 🔗 Live Demo (no login required)
+
+👉 [https://cvbuilder-v2.streamlit.app/](https://cvbuilder-v2.streamlit.app/)
 
 ---
 
-### 🔗 Live demo (no login required):
-https://cvbuilder-v2.streamlit.app/
+## ✨ Key Features
 
----
-## 🚀 Key Features
+### 🧩 Modern ATS-Friendly CV Builder
 
-### ✅ Modern ATS-Friendly CV Builder
+- Clean, recruiter-friendly layout
+- High ATS parsing compatibility
+- Keyword-dense yet human-readable structure
+- Optional photo support (disabled by default for ATS safety)
 
-- Clean, recruiter-optimized layout
-- Strong ATS parsing compatibility
-- Keyword-dense but human-readable structure
-- Optional photo support (disabled by default for ATS)
-
-### ✅ Europass CV (Full Editor)
+### 📄 Europass CV (Full Editor)
 
 - Complete Europass-compatible structure
-- All official fields supported
+- All official Europass fields supported
 - PDF & DOCX export
 
-### ✅ Offline Job Description Analyzer
+---
 
-- Paste a Job Description once (EN / RO)
+## 🧠 Job Description Intelligence (Offline)
+
+### 🔍 Offline Job Description Analyzer
+
+- Paste a Job Description **once** (EN / RO)
 - Automatic language detection
 - Keyword extraction & ranking
 - Coverage score (how well your CV matches the job)
-- Persistent analysis per job (hash-based)
+- Persistent analysis per job (hash-based, no duplicates)
 
-### ✅ ATS Optimizer
+### ⚙️ ATS Optimizer
 
 - Shows **present vs missing keywords**
 - One-click auto-apply of missing keywords into CV
 - Keeps CV ATS-safe (no keyword stuffing)
 
-### ✅ ATS Helper Panel
+### 🧰 ATS Helper Panel
 
 - Action verbs
 - Metrics ideas
 - Bullet templates
 - Keywords (merged from libraries + profile)
-- All localized EN / RO
-
-### ✅ ATS Profiles & Domain Libraries
-
-- IT & Non-IT profiles
-- Domain-based keyword libraries
-- Automatic merge order:
-    
-    ```bash
-    Core Library → Domain Library → Selected Profile
-    
-    ```
-    
-- Profiles editable as YAML (no code changes needed)
-
-### ✅ Auto Profile Suggestion
-
-- Suggests best ATS profile based on Job Description
-- Works offline
-- Helps non-technical users choose the right profile
-
-### ✅ Import / Export
-
-- Import CV from **PDF / DOCX** (Autofill)
-- Import / Export CV as **JSON**
-- Export:
-    - PDF (Modern / Europass)
-    - DOCX (Modern / Europass)
-    - Plain ATS `.txt`
-
-### ✅ Desktop & Cloud Ready
-
-- Runs locally with Streamlit
-- Works on **Streamlit Cloud**
-- Windows & Linux compatible
-- PyInstaller desktop builds supported
+- Fully localized **EN / RO**
 
 ---
 
-## 🧠 Architecture Overview
+## 📚 ATS Profiles & Domain Libraries
+
+- IT & Non-IT profiles
+- Domain-specific keyword libraries
+- Profiles are **editable YAML files** (no code changes needed)
+- Automatic merge order:
 
 ```
-CVBuilder
+Core Library
+  → Domain Library
+    → Selected Profile
+
+```
+
+This ensures relevance, consistency, and ATS compatibility across roles.
+
+---
+
+## 🤖 Auto Profile Suggestion Engine
+
+- Suggests the **best ATS profile** based on Job Description
+- Works completely offline
+- Ideal for non-technical users unsure which profile to choose
+
+---
+
+## 🔄 Import / Export
+
+### Import
+
+- PDF / DOCX CV autofill
+- JSON import (stable schema)
+
+### Export
+
+- PDF (Modern / Europass)
+- DOCX (Modern / Europass)
+- Plain ATS-friendly `.txt`
+
+---
+
+## 🧱 Architecture Overview
+
+```
+CVBuilder/
 │
-├── app.py# Main Streamlit app
+├── app.py# Main Streamlit application
 │
 ├── components/# UI components
 │   ├── ats_optimizer.py
@@ -102,17 +114,14 @@ CVBuilder
 │   ├── profiles.py# Profiles, libraries, domain logic
 │   ├── jd_optimizer.py# Offline JD analysis engine
 │   ├── pdf_autofill.py# PDF / DOCX autofill
-│   └── session.py# State & reset logic
+│   └── session.py# Session & reset logic
 │
 ├── ats_profiles/
-│   ├── domains_index.yaml# IT / Non-IT domain mapping
-│   ├── core_en_ro.yaml# Global library
-│   ├── cyber_security.yaml# Example profile
+│   ├── domains_index.yaml
+│   ├── core_en_ro.yaml
+│   ├── cyber_security.yaml
 │   └── libraries/
 │       └── domains/
-│           ├── cyber_security.yaml
-│           ├── finance_accounting.yaml
-│           └── ...
 │
 └── exporters/
     ├── pdf_generator.py
@@ -122,23 +131,22 @@ CVBuilder
 
 ---
 
-## 🔁 Job Description Flow (Single Source of Truth)
+## 🔁 Single Source of Truth – Job Description
 
-There is **only one Job Description input** in the entire app:
+The entire app uses **one shared Job Description field**:
 
 ```python
 cv["job_description"]
-
 ```
 
-It is shared by:
+It is consumed by:
 
 - ATS Optimizer
 - Job Description Analyzer
 - ATS Helper
 - ATS Score Dashboard
 
-This eliminates duplicate copy-paste and keeps everything in sync.
+➡️ No duplicate copy-paste. Everything stays in sync.
 
 ---
 
@@ -146,7 +154,7 @@ This eliminates duplicate copy-paste and keeps everything in sync.
 
 - English 🇬🇧
 - Romanian 🇷🇴
-- Automatic detection from Job Description
+- Automatic language detection
 - Profiles & libraries support bilingual fields:
 
 ```yaml
@@ -154,46 +162,44 @@ keywords:
 core:
 en: [IncidentResponse,SIEM]
 ro: [Răspunslaincidente,SIEM]
-
 ```
 
 ---
 
-
 ## 🎯 Target Users
 
-- Cybersecurity professionals
-- IT & Non-IT job seekers
+- IT & Cybersecurity professionals
+- Non-IT professionals (Finance, HR, Marketing, Sales, etc.)
 - Recruiters & career coaches
-- Anyone who wants ATS-optimized CVs **without cloud AI**
+- Anyone who wants **ATS-optimized CVs without cloud AI**
 
 ---
 
-## 🔐 Privacy & Offline First
+## 🔐 Privacy & Offline-First Design
 
 - No external APIs
 - No OpenAI / cloud AI calls
-- Job descriptions stay local
-- Works fully offline
+- Job descriptions never leave your machine
+- Fully functional offline
 
 ---
 
-## Build commands
-
----
-
-## 🛠️ Installation (Local)
+## 🛠 Local Installation (Developers)
 
 ```bash
 gitclone https://github.com/coseus/CVBuilder.git
 cd CVBuilder
+
 python -m venv venv
-Linux: source venv/bin/activate
-Windows: venv\Scripts\activate
+# Linux
+source venv/bin/activate
+# Windows
+venv\Scripts\activate
+
 pip install -r requirements.txt
 streamlit run app.py
-
 ```
+
 ---
 
 ## ☁️ Deploy on Streamlit Cloud
@@ -203,83 +209,72 @@ streamlit run app.py
 3. Select the repo and `app.py`
 4. Deploy 🚀
 
-### 🔗 Live demo (no login required):
-https://cvbuilder-v2.streamlit.app/
-
-✅ Fully compatible with Streamlit Cloud.
+👉 Live demo: [https://cvbuilder-v2.streamlit.app/](https://cvbuilder-v2.streamlit.app/)
 
 ---
 
-## 📥 JSON Import / Export
+## 🖥 Desktop Executables (Windows & Linux)
 
-- Stable and forward-compatible schema
-- Supports:
-    - full CV export
-    - optional photo (base64)
-- Ideal for:
-    - backups
-    - versioning
-    - migration between devices
+### 🔨 Build Locally
 
----
-## 🖥 Desktop Executables Build Localy
----
 ### Windows
-``` bash
+
+```bash
 python -m venv .venv
 .venv\Scripts\activate
-py -m pip install -r requirements.txt
-py -m pip install -r requirements-build.txt
-py -m PyInstaller .\cvbuilder_windows.spec --noconfirm --clean
+pip install -r requirements.txt
+pip install -r requirements-build.txt
+pyinstaller cvbuilder_windows.spec --noconfirm --clean
+
 ```
+
 ### Linux
-``` bash
+
+```bash
 python3 -m venv .venv
 source .venv/bin/activate
-python3 -m pip install -r requirements.txt
-python3 -m pip install -r requirements-build.txt
-python3 -m PyInstaller ./cvbuilder_linux.spec --noconfirm --clean
+pip install -r requirements.txt
+pip install -r requirements-build.txt
+pyinstaller cvbuilder_linux.spec --noconfirm --clean
 chmod +x dist/cvbuilder
 ```
 
-### The results are found in: 
-``` bash
-dist/cvbulder/
+Artifacts will be available in:
+
+```
+dist/cvbuilder/
 ```
 
-## 🖥 Desktop Executables Release
+---
 
-Download the latest **ready-to-run executables** here:
+## 📦 Prebuilt Desktop Releases
 
-🔗 **Windows & Linux builds (Mega.nz)**
+🔗 **Windows & Linux executables (Mega.nz)**
 
 👉 [https://mega.nz/folder/zxYx3Dqa#X85rmbOzS_Oy_aUEdwUg4A](https://mega.nz/folder/zxYx3Dqa#X85rmbOzS_Oy_aUEdwUg4A)
 
-### Available files
+### Files
 
 - **Windows**: `CVBuilder.exe`
-- **Linux**: `CVBuilder` (AppImage / binary)
+- **Linux**: `CVBuilder` (binary / AppImage)
 
 ⚠️ No Python installation required.
 
 ---
 
-## 🚀 How to Use
+## 🚀 Quick Start (Executables)
 
 1. Download the executable for your OS
 2. Run it (double-click)
-3. Paste **Job Description once**
-4. Select **ATS Profile** (IT / Non-IT)
+3. Paste Job Description once
+4. Select ATS Profile (IT / Non-IT)
 5. Optimize CV automatically
-6. Export as:
-    - PDF (Modern / Europass)
-    - DOCX
-    - ATS-friendly `.txt`
+6. Export PDF / DOCX / ATS `.txt`
 
 ---
 
-## 📌 Notes
+## ⚠️ Notes
 
-- Antivirus software may warn on unsigned executables (false positive).
-- If blocked on Windows, click **“More info → Run anyway”**.
-- Linux: `chmod +x CVBuilder` if needed.
+- Antivirus software may warn on unsigned executables (false positives).
+- Windows: **More info → Run anyway**
+- Linux: `chmod +x CVBuilder` if needed
