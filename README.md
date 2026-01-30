@@ -203,7 +203,8 @@ streamlit run app.py
 3. Select the repo and `app.py`
 4. Deploy 🚀
 
-   ### Demo ###: https://cvbuilder-v2.streamlit.app/
+### 🔗 Live demo (no login required):
+https://cvbuilder-v2.streamlit.app/
 
 ✅ Fully compatible with Streamlit Cloud.
 
