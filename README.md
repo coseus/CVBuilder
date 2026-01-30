@@ -277,3 +277,9 @@ Download the latest **ready-to-run executables** here:
     - ATS-friendly `.txt`
 
 ---
+
+## 📌 Notes
+
+- Antivirus software may warn on unsigned executables (false positive).
+- If blocked on Windows, click **“More info → Run anyway”**.
+- Linux: `chmod +x CVBuilder` if needed.
