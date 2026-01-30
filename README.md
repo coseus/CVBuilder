@@ -1,6 +1,6 @@
 # Coseus - CV Builder
 
-**CV Builder** is an **offline-first, ATS-optimized CV builder** that lets you create, analyze, and tailor resumes for specific job descriptions — without relying on external APIs or cloud AI services.
+🚀 **CV Builder** is a **desktop, offline-first CV generator** focused on **ATS (Applicant Tracking System) optimization**.
 
 It supports **Modern ATS-friendly CVs** and **Europass format**, includes **job description analysis**, **keyword matching**, **profile/domain libraries**, and **automatic CV optimization per job**.
 
@@ -159,32 +159,6 @@ ro: [Răspunslaincidente,SIEM]
 
 ---
 
-## 🛠️ Installation (Local)
-
-```bash
-gitclone https://github.com/yourusername/CVBuilder.git
-cd CVBuilder
-python -m venv venv
-source venv/bin/activate# Windows: venv\Scripts\activate
-pip install -r requirements.txt
-streamlit run app.py
-
-```
-
----
-
-## 🖥️ Desktop Build (Optional)
-
-Windows example (PyInstaller):
-
-```bash
-pyinstaller cvbuilder.spec --clean --noconfirm
-
-```
-
-Produces a standalone executable running Streamlit locally.
-
----
 
 ## 🎯 Target Users
 
@@ -205,22 +179,100 @@ Produces a standalone executable running Streamlit locally.
 ---
 
 ## Build commands
+
+---
+
+## 🛠️ Installation (Local)
+
+```bash
+gitclone https://github.com/coseus/CVBuilder.git
+cd CVBuilder
+python -m venv venv
+Linux: source venv/bin/activate
+Windows: venv\Scripts\activate
+pip install -r requirements.txt
+streamlit run app.py
+
+```
+---
+
+## ☁️ Deploy on Streamlit Cloud
+
+1. Push the repository to GitHub
+2. Go to [https://streamlit.io/cloud](https://streamlit.io/cloud)
+3. Select the repo and `app.py`
+4. Deploy 🚀
+
+   ### Demo ###: https://cvbuilder-v2.streamlit.app/
+
+✅ Fully compatible with Streamlit Cloud.
+
+---
+
+## 📥 JSON Import / Export
+
+- Stable and forward-compatible schema
+- Supports:
+    - full CV export
+    - optional photo (base64)
+- Ideal for:
+    - backups
+    - versioning
+    - migration between devices
+
+---
+## 🖥 Desktop Executables Build Localy
+---
 ### Windows
 ``` bash
 python -m venv .venv
 .venv\Scripts\activate
-pip install -r requirements-build.txt
-pyinstaller .\cvbuilderats_windows.spec --noconfirm --clean
+py -m pip install -r requirements.txt
+py -m pip install -r requirements-build.txt
+py -m PyInstaller .\cvbuilder_windows.spec --noconfirm --clean
 ```
 ### Linux
 ``` bash
 python3 -m venv .venv
 source .venv/bin/activate
-pip install -r requirements-build.txt
-pyinstaller cvbuilderats_linux.spec --noconfirm --clean
+python3 -m pip install -r requirements.txt
+python3 -m pip install -r requirements-build.txt
+python3 -m PyInstaller ./cvbuilder_linux.spec --noconfirm --clean
+chmod +x dist/cvbuilder
 ```
 
-### Rezultatul va fi în:
+### The results are found in: 
 ``` bash
-dist/CVBuilderATS/
+dist/cvbulder/
 ```
+
+## 🖥 Desktop Executables Release
+
+Download the latest **ready-to-run executables** here:
+
+🔗 **Windows & Linux builds (Mega.nz)**
+
+👉 [https://mega.nz/folder/zxYx3Dqa#X85rmbOzS_Oy_aUEdwUg4A](https://mega.nz/folder/zxYx3Dqa#X85rmbOzS_Oy_aUEdwUg4A)
+
+### Available files
+
+- **Windows**: `CVBuilder.exe`
+- **Linux**: `CVBuilder` (AppImage / binary)
+
+⚠️ No Python installation required.
+
+---
+
+## 🚀 How to Use
+
+1. Download the executable for your OS
+2. Run it (double-click)
+3. Paste **Job Description once**
+4. Select **ATS Profile** (IT / Non-IT)
+5. Optimize CV automatically
+6. Export as:
+    - PDF (Modern / Europass)
+    - DOCX
+    - ATS-friendly `.txt`
+
+---
